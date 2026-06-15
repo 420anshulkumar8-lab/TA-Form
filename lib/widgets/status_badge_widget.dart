@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/ta_session.dart';
 
 class StatusBadgeWidget extends StatelessWidget {
-  final TaStatus status;
+  final SessionStatus status;
   final bool compact;
 
   const StatusBadgeWidget({
@@ -45,30 +45,23 @@ class StatusBadgeWidget extends StatelessWidget {
     );
   }
 
-  _StatusConfig _statusConfig(TaStatus status) {
+  _StatusConfig _statusConfig(SessionStatus status) {
     switch (status) {
-      case TaStatus.draft:
+      case SessionStatus.fresh:
+        return _StatusConfig(
+          label: 'Fresh',
+          icon: Icons.edit_outlined,
+          backgroundColor: const Color(0xFFFFF3E0),
+          foregroundColor: const Color(0xFFE65100),
+        );
+      case SessionStatus.draft:
         return _StatusConfig(
           label: 'Draft',
           icon: Icons.edit_outlined,
           backgroundColor: const Color(0xFFFFF3E0),
           foregroundColor: const Color(0xFFE65100),
         );
-      case TaStatus.inProgress:
-        return _StatusConfig(
-          label: 'In Progress',
-          icon: Icons.pending_outlined,
-          backgroundColor: const Color(0xFFE3F2FD),
-          foregroundColor: const Color(0xFF1565C0),
-        );
-      case TaStatus.completed:
-        return _StatusConfig(
-          label: 'Completed',
-          icon: Icons.check_circle_outline,
-          backgroundColor: const Color(0xFFE8F5E9),
-          foregroundColor: const Color(0xFF2E7D32),
-        );
-      case TaStatus.submitted:
+      case SessionStatus.submitted:
         return _StatusConfig(
           label: 'Submitted',
           icon: Icons.upload_outlined,
