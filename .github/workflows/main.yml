@@ -27,6 +27,14 @@ jobs:
       - name: Install Packages
         run: flutter pub get
 
+      - name: Fix printing plugin compileSdk
+        run: |
+          PRINTING_DIR=$(find ~/.pub-cache -path "*/printing-*/android" -type d | head -1)
+          if [ -n "$PRINTING_DIR" ]; then
+            sed -i 's/compileSdkVersion [0-9]*/compileSdkVersion 36/g' "$PRINTING_DIR/build.gradle"
+            sed -i 's/compileSdk [0-9]*/compileSdk 36/g' "$PRINTING_DIR/build.gradle"
+          fi
+
       - name: Build APK
         run: flutter build apk --release
 
