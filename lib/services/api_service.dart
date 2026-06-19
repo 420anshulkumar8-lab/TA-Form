@@ -1,8 +1,4 @@
 // lib/services/api_service.dart
-// ─────────────────────────────────────────────────────────────────────────────
-// Sends chat messages to Google Gemini API.
-// Handles session context injection and JSON tag extraction.
-// ─────────────────────────────────────────────────────────────────────────────
 
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -13,9 +9,9 @@ import '../prompts/ta_system_prompt.dart';
 import '../prompts/contingent_system_prompt.dart';
 
 class ApiResponse {
-  final String cleanMessage; // Message shown to user (tags removed)
-  final Map<String, dynamic>? taFormData; // Parsed from <ta_form_data>
-  final Map<String, dynamic>? contingentFormData; // From <contingent_form_data>
+  final String cleanMessage;
+  final Map<String, dynamic>? taFormData;
+  final Map<String, dynamic>? contingentFormData;
   final String? error;
 
   const ApiResponse({
@@ -29,20 +25,14 @@ class ApiResponse {
 }
 
 class ApiService {
-  // Gemini endpoint — model name injected at runtime
-  static const String _baseEndpoint =
-      'https://generativelanguage.googleapis.com/v1beta/models';
+  static const String _endpoint =
+      'https://openrouter.ai/api/v1/chat/completions';
 
   final String apiKey;
   final String model;
 
   ApiService({required this.apiKey, required this.model});
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PUBLIC API
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  /// Send a message in the TA chat tab
   Future<ApiResponse> sendTaMessage({
     required TaSession session,
     required EmployeeProfile profile,
@@ -50,28 +40,20 @@ class ApiService {
   }) async {
     final systemPrompt = _buildTaSystemPrompt(session, profile);
     final messages = _buildMessages(session.chatHistoryTa, newUserMessage);
-    return _callGemini(systemPrompt: systemPrompt, messages: messages);
+    return _callApi(systemPrompt: systemPrompt, messages: messages);
   }
 
-  /// Send a message in the Contingent chat tab
   Future<ApiResponse> sendContingentMessage({
     required TaSession session,
     required EmployeeProfile profile,
     required String newUserMessage,
   }) async {
-    final systemPrompt =
-        _buildContingentSystemPrompt(session, profile);
-    final messages =
-        _buildMessages(session.chatHistoryContingent, newUserMessage);
-    return _callGemini(systemPrompt: systemPrompt, messages: messages);
+    final systemPrompt = _buildContingentSystemPrompt(session, profile);
+    final messages = _buildMessages(session.chatHistoryContingent, newUserMessage);
+    return _callApi(systemPrompt: systemPrompt, messages: messages);
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PRIVATE HELPERS
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  String _buildTaSystemPrompt(
-      TaSession session, EmployeeProfile profile) {
+  String _buildTaSystemPrompt(TaSession session, EmployeeProfile profile) {
     final rates = TaRatesConfig.ratesForGradeLevel(profile.gradeLevel);
     final contextJson = jsonEncode({
       'LANGUAGE': session.aiLanguage,
@@ -86,8 +68,7 @@ class ApiService {
     return '${TaSystemPrompt.prompt}\n\n--- SYSTEM CONTEXT ---\n$contextJson';
   }
 
-  String _buildContingentSystemPrompt(
-      TaSession session, EmployeeProfile profile) {
+  String _buildContingentSystemPrompt(TaSession session, EmployeeProfile profile) {
     final rates = TaRatesConfig.ratesForGradeLevel(profile.gradeLevel);
     final contextJson = jsonEncode({
       'LANGUAGE': session.aiLanguage,
@@ -103,76 +84,58 @@ class ApiService {
     return '${ContingentSystemPrompt.prompt}\n\n--- SYSTEM CONTEXT ---\n$contextJson';
   }
 
-  /// Convert internal chat history to Gemini format
-  /// Gemini uses "user" and "model" roles (not "assistant")
   List<Map<String, dynamic>> _buildMessages(
       List<ChatMessage> history, String newMessage) {
-    final messages = history.map((m) {
-      return {
-        'role': m.role == 'assistant' ? 'model' : 'user',
-        'parts': [
-          {'text': m.content}
-        ],
-      };
-    }).toList();
-
-    messages.add({
-      'role': 'user',
-      'parts': [
-        {'text': newMessage}
-      ],
-    });
-    return messages;
+    return [
+      ...history.map((m) => {
+        'role': m.role == 'assistant' ? 'assistant' : 'user',
+        'content': m.content,
+      }),
+      {
+        'role': 'user',
+        'content': newMessage,
+      },
+    ];
   }
 
-  Future<ApiResponse> _callGemini({
+  Future<ApiResponse> _callApi({
     required String systemPrompt,
     required List<Map<String, dynamic>> messages,
   }) async {
     try {
-      // Gemini endpoint: /v1beta/models/{model}:generateContent?key={apiKey}
-      final uri = Uri.parse(
-          '$_baseEndpoint/$model:generateContent?key=$apiKey');
-
-      final body = jsonEncode({
-        'system_instruction': {
-          'parts': [
-            {'text': systemPrompt}
-          ]
-        },
-        'contents': messages,
-        'generationConfig': {
-          'maxOutputTokens': 4096,
-          'temperature': 0.7,
-        },
-      });
+      final allMessages = [
+        {'role': 'system', 'content': systemPrompt},
+        ...messages,
+      ];
 
       final response = await http
           .post(
-            uri,
-            headers: {'Content-Type': 'application/json'},
-            body: body,
+            Uri.parse(_endpoint),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $apiKey',
+              'HTTP-Referer': 'https://els-gzb.app',
+              'X-Title': 'TA Form App',
+            },
+            body: jsonEncode({
+              'model': model,
+              'messages': allMessages,
+              'max_tokens': 4096,
+              'temperature': 0.7,
+            }),
           )
           .timeout(const Duration(seconds: 60));
 
       if (response.statusCode == 200) {
-        final decoded =
-            jsonDecode(response.body) as Map<String, dynamic>;
-        // Gemini response path: candidates[0].content.parts[0].text
-        final candidates =
-            decoded['candidates'] as List<dynamic>;
-        final content =
-            candidates.first['content'] as Map<String, dynamic>;
-        final parts = content['parts'] as List<dynamic>;
-        final rawText = parts.first['text'] as String;
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        final rawText =
+            decoded['choices'][0]['message']['content'] as String;
         return _parseResponse(rawText);
       } else {
-        final error =
-            'Gemini API error ${response.statusCode}: ${response.body}';
         return ApiResponse(
           cleanMessage:
               'AI se connection nahi ho pa raha. Dobara try karein.',
-          error: error,
+          error: 'Error ${response.statusCode}: ${response.body}',
         );
       }
     } catch (e) {
@@ -183,16 +146,11 @@ class ApiService {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Extract hidden JSON tags, return clean message + parsed data
-  // ─────────────────────────────────────────────────────────────────────────
   ApiResponse _parseResponse(String rawText) {
     Map<String, dynamic>? taFormData;
     Map<String, dynamic>? contingentFormData;
-
     String clean = rawText;
 
-    // Extract <ta_form_data>...</ta_form_data>
     final taMatch = RegExp(
       r'<ta_form_data>([\s\S]*?)<\/ta_form_data>',
       caseSensitive: false,
@@ -202,24 +160,19 @@ class ApiService {
         taFormData =
             jsonDecode(taMatch.group(1)!.trim()) as Map<String, dynamic>;
       } catch (_) {}
-      clean = clean
-          .replaceAll(taMatch.group(0)!, '')
-          .trim();
+      clean = clean.replaceAll(taMatch.group(0)!, '').trim();
     }
 
-    // Extract <contingent_form_data>...</contingent_form_data>
     final contingentMatch = RegExp(
       r'<contingent_form_data>([\s\S]*?)<\/contingent_form_data>',
       caseSensitive: false,
     ).firstMatch(clean);
     if (contingentMatch != null) {
       try {
-        contingentFormData = jsonDecode(contingentMatch.group(1)!.trim())
-            as Map<String, dynamic>;
+        contingentFormData =
+            jsonDecode(contingentMatch.group(1)!.trim()) as Map<String, dynamic>;
       } catch (_) {}
-      clean = clean
-          .replaceAll(contingentMatch.group(0)!, '')
-          .trim();
+      clean = clean.replaceAll(contingentMatch.group(0)!, '').trim();
     }
 
     return ApiResponse(
