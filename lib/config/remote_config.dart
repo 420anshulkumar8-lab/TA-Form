@@ -10,10 +10,10 @@ class RemoteConfig {
   /// Example:
   ///   "https://raw.githubusercontent.com/your-org/private-repo/main/config.json"
   static const String configUrl =
-      'https://raw.githubusercontent.com/420anshulkumar8-lab/config/main/config.json';
+      'https://gist.githubusercontent.com/420anshulkumar8-lab/0c2fea6e262cf353543414f68b9c9b74/raw/d7b86cb89c42d79f40b56256ab40993fd743da33/config.json';
 
   /// Default model to use if remote config cannot be fetched
-  static const String defaultModel = 'gemini-2.0-flash';
+  static const String defaultModel = 'google/gemini-2.0-flash-exp:free';
 
   /// Hive settings keys
   static const String hiveCachedApiKey = 'cached_api_key';
