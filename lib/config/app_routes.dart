@@ -5,6 +5,7 @@ import '../screens/home_screen.dart';
 import '../screens/profile_screen.dart';
 import '../screens/month_selection_screen.dart';
 import '../screens/draft_preview_screen.dart';
+import '../screens/manual_ta_form_screen.dart';
 import '../screens/chat_screen.dart';
 import '../screens/pdf_preview_screen.dart';
 import '../screens/old_records_screen.dart';
@@ -15,6 +16,7 @@ class AppRoutes {
   static const String profile = '/profile';
   static const String monthSelection = '/month-selection';
   static const String draftPreview = '/draft-preview';
+  static const String manualTa = '/manual-ta';
   static const String chat = '/chat';
   static const String pdfPreview = '/pdf-preview';
   static const String oldRecords = '/old-records';
@@ -33,6 +35,12 @@ class AppRoutes {
         final session = settings.arguments as TaSession;
         return MaterialPageRoute(
           builder: (_) => DraftPreviewScreen(session: session),
+          settings: settings,
+        );
+      case manualTa:
+        final session = settings.arguments as TaSession;
+        return MaterialPageRoute(
+          builder: (_) => ManualTaFormScreen(session: session),
           settings: settings,
         );
       case chat:
