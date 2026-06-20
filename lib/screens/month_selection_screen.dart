@@ -8,6 +8,7 @@ import '../providers/app_provider.dart';
 import '../services/hive_service.dart';
 import '../widgets/status_badge_widget.dart';
 import 'draft_preview_screen.dart';
+import 'manual_ta_form_screen.dart';
 import 'pdf_preview_screen.dart';
 
 class MonthSelectionScreen extends StatefulWidget {
@@ -27,6 +28,9 @@ class _MonthSelectionScreenState
   // ── Step 3: what to fill ──────────────────────────────────────────────────
   bool _fillTa = true;
   bool _fillContingent = true;
+
+  // ── Step 3.5: AI ya Manual ────────────────────────────────────────────────
+  String _fillMode = 'ai'; // 'ai' | 'manual'
 
   // ── Step 4: AI language ───────────────────────────────────────────────────
   String _aiLanguage = 'Hinglish';
@@ -95,7 +99,7 @@ class _MonthSelectionScreenState
     }
   }
 
-  void _goToLanguageStep() {
+  void _onWhatToFillNext() {
     if (!_fillTa && !_fillContingent) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -104,8 +108,12 @@ class _MonthSelectionScreenState
       );
       return;
     }
-    setState(() => _step = 4);
+    // Manual fill sirf TA ke liye hai — agar TA select hi nahi hai,
+    // seedha language step pe jao (contingent hamesha AI se bharta hai).
+    setState(() => _step = _fillTa ? 4 : 5);
   }
+
+  void _onFillModeNext() => setState(() => _step = 5);
 
   void _startFilling() {
     final opt = _selectedMonth!;
@@ -132,6 +140,16 @@ class _MonthSelectionScreenState
 
     HiveService.saveSession(session);
 
+    if (_fillMode == 'manual' && _fillTa) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ManualTaFormScreen(session: session),
+        ),
+      );
+      return;
+    }
+
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
@@ -147,10 +165,14 @@ class _MonthSelectionScreenState
         title: const Text('Fill TA Form'),
         leading: BackButton(
           onPressed: () {
-            if (_step > 1) {
-              setState(() => _step = _step == 2 ? 1 : _step - 1);
-            } else {
+            if (_step == 1) {
               Navigator.pop(context);
+            } else if (_step == 2 || _step == 3) {
+              setState(() => _step = 1);
+            } else if (_step == 4) {
+              setState(() => _step = 3);
+            } else if (_step == 5) {
+              setState(() => _step = _fillTa ? 4 : 3);
             }
           },
         ),
@@ -196,9 +218,15 @@ class _MonthSelectionScreenState
           onTaChanged: (v) => setState(() => _fillTa = v),
           onContingentChanged: (v) =>
               setState(() => _fillContingent = v),
-          onNext: _goToLanguageStep,
+          onNext: _onWhatToFillNext,
         );
       case 4:
+        return _StepFillMode(
+          selected: _fillMode,
+          onChanged: (v) => setState(() => _fillMode = v),
+          onNext: _onFillModeNext,
+        );
+      case 5:
         return _StepAiLanguage(
           languages: _aiLanguages,
           selected: _aiLanguage,
@@ -400,6 +428,133 @@ class _StepWhatToFill extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _StepFillMode extends StatelessWidget {
+  final String selected;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onNext;
+
+  const _StepFillMode({
+    required this.selected,
+    required this.onChanged,
+    required this.onNext,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'TA Form kaise bharna hai?',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'AI aapse baat karke form bharega, ya aap khud table mein details bhar sakte hain.',
+            style: TextStyle(color: Colors.grey),
+          ),
+          const SizedBox(height: 24),
+          _ModeCard(
+            icon: Icons.smart_toy_outlined,
+            title: 'AI Se Bharein',
+            subtitle: 'Chat karke apni journey batayein, AI form bhar dega.',
+            isSelected: selected == 'ai',
+            onTap: () => onChanged('ai'),
+          ),
+          const SizedBox(height: 12),
+          _ModeCard(
+            icon: Icons.edit_note,
+            title: 'Khud Bharein (Manual)',
+            subtitle: 'Seedha table mein date, station, rate waghera khud bharein.',
+            isSelected: selected == 'manual',
+            onTap: () => onChanged('manual'),
+          ),
+          const Spacer(),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: onNext,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1565C0),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              child: const Text('Aage Badho', style: TextStyle(fontSize: 16)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ModeCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _ModeCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: isSelected
+                ? const Color(0xFF1565C0)
+                : Colors.grey.shade300,
+            width: isSelected ? 2 : 1,
+          ),
+          borderRadius: BorderRadius.circular(12),
+          color: isSelected
+              ? const Color(0xFF1565C0).withOpacity(0.06)
+              : null,
+        ),
+        child: Row(
+          children: [
+            Icon(icon,
+                size: 32,
+                color: isSelected
+                    ? const Color(0xFF1565C0)
+                    : Colors.grey.shade600),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 15)),
+                  const SizedBox(height: 2),
+                  Text(subtitle,
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                ],
+              ),
+            ),
+            if (isSelected)
+              const Icon(Icons.check_circle, color: Color(0xFF1565C0)),
+          ],
+        ),
       ),
     );
   }
