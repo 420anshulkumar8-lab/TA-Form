@@ -53,6 +53,18 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setProfilePhoto(String path) async {
+    _profile.photoPath = path;
+    await HiveService.saveProfile(_profile);
+    notifyListeners();
+  }
+
+  Future<void> removeProfilePhoto() async {
+    _profile.photoPath = '';
+    await HiveService.saveProfile(_profile);
+    notifyListeners();
+  }
+
   Future<void> toggleDarkMode() async {
     _isDarkMode = !_isDarkMode;
     await HiveService.setDarkMode(_isDarkMode);
