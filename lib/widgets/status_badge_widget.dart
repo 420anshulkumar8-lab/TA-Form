@@ -49,10 +49,10 @@ class StatusBadgeWidget extends StatelessWidget {
     switch (status) {
       case SessionStatus.fresh:
         return _StatusConfig(
-          label: 'Fresh',
-          icon: Icons.edit_outlined,
-          backgroundColor: const Color(0xFFFFF3E0),
-          foregroundColor: const Color(0xFFE65100),
+          label: 'New',
+          icon: Icons.add_circle_outline,
+          backgroundColor: const Color(0xFFF1F5F9),
+          foregroundColor: const Color(0xFF64748B),
         );
       case SessionStatus.draft:
         return _StatusConfig(
@@ -63,10 +63,10 @@ class StatusBadgeWidget extends StatelessWidget {
         );
       case SessionStatus.submitted:
         return _StatusConfig(
-          label: 'Submitted',
-          icon: Icons.upload_outlined,
-          backgroundColor: const Color(0xFFEDE7F6),
-          foregroundColor: const Color(0xFF4527A0),
+          label: 'Filled',
+          icon: Icons.check_circle_outline,
+          backgroundColor: const Color(0xFFE8F5E9),
+          foregroundColor: const Color(0xFF2E7D32),
         );
     }
   }
