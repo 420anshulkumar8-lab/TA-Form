@@ -6,10 +6,16 @@
 //   Page 2 = assets/images/ga31_page2.png   (continuation table + certificates)
 //
 // Text is overlaid on the scanned form images at X,Y positions from
-// FormLayout. If a TA month has more entries than fit on page 1, the
-// remaining rows automatically continue onto page 2's table. The Contingent
-// Bill (if present) is printed directly below the TA table's Grand Total,
-// on whichever scanned page that total ends up on.
+// FormLayout. TA data is a list of Trips, each with one or more legs; all
+// legs of a trip share one Purpose, printed once vertically centered next
+// to that trip's leg rows, with a small curly-bracket connecting them — only
+// in the PDF (the Form View shows its own merged-cell look separately).
+//
+// If a TA month has more legs than fit on page 1, the remaining legs
+// automatically continue onto page 2's table — even mid-trip if needed; the
+// bracket/Purpose is drawn relative to wherever that trip's legs actually
+// landed. The Contingent Bill (if present) is printed directly below the TA
+// table's Grand Total, on whichever scanned page that total ends up on.
 //
 // Developer note: tweak FormLayout constants after a test print to fine-tune
 // alignment against your physical form.
@@ -34,6 +40,24 @@ class _Amount {
   const _Amount(this.rupees, this.paise);
 }
 
+/// A single printed leg, flattened out of its TripGroup, plus which trip
+/// it belongs to and whether it's the first/last leg of that trip (needed
+/// to know where to draw the Purpose bracket).
+class _FlatLeg {
+  final TripRow leg;
+  final int tripIndex;
+  final String purpose;
+  final bool isFirstOfTrip;
+  final bool isLastOfTrip;
+  const _FlatLeg({
+    required this.leg,
+    required this.tripIndex,
+    required this.purpose,
+    required this.isFirstOfTrip,
+    required this.isLastOfTrip,
+  });
+}
+
 class PdfService {
   // ── Main entry point ──────────────────────────────────────────────────────
   static Future<String> generatePdf({
@@ -56,26 +80,26 @@ class PdfService {
       contingentData = ContingentFormData.fromJson(session.formDataContingent!);
     }
 
-    final taRows = taData?.rows ?? <TripRow>[];
+    final flatLegs = _flattenTrips(taData?.trips ?? <TripGroup>[]);
 
     // ── Decide row height / font size for the WHOLE TA table, then split
-    //    rows between page 1 and page 2 based on how many fit on page 1. ───
-    final rowHeight = FormLayout.rowHeightForCount(taRows.length);
-    final fontSize = FormLayout.fontSizeForRows(taRows.length);
+    //    legs between page 1 and page 2 based on how many fit on page 1. ───
+    final rowHeight = FormLayout.rowHeightForCount(flatLegs.length);
+    final fontSize = FormLayout.fontSizeForRows(flatLegs.length);
     final page1Cap = FormLayout.page1Capacity(rowHeight);
 
-    final page1Rows =
-        taRows.length <= page1Cap ? taRows : taRows.sublist(0, page1Cap);
-    final page2Rows =
-        taRows.length <= page1Cap ? <TripRow>[] : taRows.sublist(page1Cap);
+    final page1Legs =
+        flatLegs.length <= page1Cap ? flatLegs : flatLegs.sublist(0, page1Cap);
+    final page2Legs =
+        flatLegs.length <= page1Cap ? <_FlatLeg>[] : flatLegs.sublist(page1Cap);
 
-    final taEndsOnPage2 = page2Rows.isNotEmpty;
+    final taEndsOnPage2 = page2Legs.isNotEmpty;
 
     // ── Where does the TA table (incl. Grand Total) end? Used as the start
     //    Y for the Contingent block on that same page. ──────────────────────
     final taEndY = taEndsOnPage2
-        ? FormLayout.firstRowY2 + page2Rows.length * rowHeight + 4
-        : FormLayout.firstRowY + page1Rows.length * rowHeight + 4;
+        ? FormLayout.firstRowY2 + page2Legs.length * rowHeight + 4
+        : FormLayout.firstRowY + page1Legs.length * rowHeight + 4;
 
     // ── Contingent sizing ──────────────────────────────────────────────────
     final contingentEntries = contingentData?.entries ?? <ContingentEntry>[];
@@ -87,9 +111,6 @@ class PdfService {
     final contingentBottomLimit = taEndsOnPage2
         ? FormLayout.contingentBottomY2
         : FormLayout.contingentBottomY1;
-    // If the contingent block doesn't fit in the remaining space on the page
-    // the TA table ended on, push the whole block onto page 2 instead
-    // (starting fresh under page 2's table area) so nothing overlaps.
     final contingentFitsAfterTa = !taEndsOnPage2 &&
         (contingentStartY +
                 contingentEntries.length * contingentRowHeight +
@@ -101,7 +122,7 @@ class PdfService {
         ? contingentStartY
         : (contingentOnPage2WithTa
             ? contingentStartY
-            : FormLayout.firstRowY2); // own space on page 2 if TA was page-1-only
+            : FormLayout.firstRowY2);
 
     // ── PAGE 1 — front of GA-31 ──────────────────────────────────────────────
     pdf.addPage(
@@ -118,7 +139,8 @@ class PdfService {
                 child: pw.Image(pw.MemoryImage(bg1), fit: pw.BoxFit.fill),
               ),
             ..._headerOverlay(profile, session),
-            ..._tableRows(page1Rows, rowHeight, fontSize, FormLayout.firstRowY),
+            ..._legRows(page1Legs, rowHeight, fontSize, FormLayout.firstRowY),
+            ..._purposeOverlay(page1Legs, rowHeight, fontSize, FormLayout.firstRowY),
             if (!taEndsOnPage2 && taData != null)
               ..._totalOverlay(taData, taEndY, fontSize),
             if (contingentOnPage1 && contingentData != null)
@@ -143,7 +165,8 @@ class PdfService {
               pw.Positioned.fill(
                 child: pw.Image(pw.MemoryImage(bg2), fit: pw.BoxFit.fill),
               ),
-            ..._tableRows(page2Rows, rowHeight, fontSize, FormLayout.firstRowY2),
+            ..._legRows(page2Legs, rowHeight, fontSize, FormLayout.firstRowY2),
+            ..._purposeOverlay(page2Legs, rowHeight, fontSize, FormLayout.firstRowY2),
             if (taEndsOnPage2 && taData != null)
               ..._totalOverlay(taData, taEndY, fontSize),
             if (!contingentOnPage1 && contingentData != null)
@@ -170,6 +193,25 @@ class PdfService {
     return file.path;
   }
 
+  // ── Flatten Trips → legs, tagging each with its trip's shared Purpose and
+  //    its first/last-of-trip position (needed for the bracket later). ──────
+  static List<_FlatLeg> _flattenTrips(List<TripGroup> trips) {
+    final flat = <_FlatLeg>[];
+    for (int t = 0; t < trips.length; t++) {
+      final trip = trips[t];
+      for (int i = 0; i < trip.legs.length; i++) {
+        flat.add(_FlatLeg(
+          leg: trip.legs[i],
+          tripIndex: t,
+          purpose: trip.purpose,
+          isFirstOfTrip: i == 0,
+          isLastOfTrip: i == trip.legs.length - 1,
+        ));
+      }
+    }
+    return flat;
+  }
+
   // ── Header strip overlay (page 1 only) ────────────────────────────────────
   static List<pw.Widget> _headerOverlay(
       EmployeeProfile profile, TaSession session) {
@@ -178,23 +220,18 @@ class PdfService {
         : session.year;
 
     return [
-      // शाखा/Branch ... मंडल/जिला/Division/District ... सदर मुकाम/Headquarters
       _overlayText(profile.department, FormLayout.branchX,
           FormLayout.branchDivisionHqY, FormLayout.fontSizeNormal),
       _overlayText(profile.division, FormLayout.divisionX,
           FormLayout.branchDivisionHqY, FormLayout.fontSizeNormal),
       _overlayText(profile.headquarter, FormLayout.headquartersX,
           FormLayout.branchDivisionHqY, FormLayout.fontSizeNormal),
-
-      // ...performed by Shri ____ for which allowance ____ 20__ is claimed
       _overlayText(profile.name, FormLayout.employeeNameX,
           FormLayout.shriRowY, FormLayout.fontSizeNormal),
       _overlayText(_capitalize(session.month), FormLayout.monthX,
           FormLayout.shriRowY, FormLayout.fontSizeNormal),
       _overlayText(yearShort, FormLayout.yearX, FormLayout.shriRowY,
           FormLayout.fontSizeNormal),
-
-      // पद/Designation ... वेतन/Pay ... नियुक्ति की तारीख/Date of appointment
       _overlayText(profile.designation, FormLayout.designationX,
           FormLayout.designationRowY, FormLayout.fontSizeNormal),
       _overlayText(
@@ -208,9 +245,10 @@ class PdfService {
     ];
   }
 
-  // ── TA table rows (used for both page 1 & page 2) ─────────────────────────
-  static List<pw.Widget> _tableRows(
-    List<TripRow> rows,
+  // ── Leg rows (everything except the Purpose column) — used for both
+  //    page 1 & page 2. ──────────────────────────────────────────────────
+  static List<pw.Widget> _legRows(
+    List<_FlatLeg> flatLegs,
     double rowHeight,
     double fontSize,
     double startY,
@@ -218,41 +256,22 @@ class PdfService {
     final widgets = <pw.Widget>[];
     double y = startY;
 
-    for (final row in rows) {
-      if (row.rowType == RowType.stay) {
-        // ── Stay/halt row: merged across columns 2-7 ──────────────────────
-        final stayText =
-            'Stay: ${row.location}  ${row.dateFrom} - ${row.dateTo}';
-        widgets.add(_overlayTextBox(
-            stayText, FormLayout.vehicleX, y, fontSize, width: 260));
-        widgets.add(_overlayText(
-            'Night x${row.nights}', FormLayout.dayNightX, y, fontSize));
+    for (final flat in flatLegs) {
+      final leg = flat.leg;
+      widgets.add(_overlayText(leg.date, FormLayout.dateX, y, fontSize));
+      widgets.add(_overlayText(leg.vehicleNumber, FormLayout.vehicleX, y, fontSize));
+      widgets.add(_overlayText(leg.departureTime, FormLayout.departureX, y, fontSize));
+      widgets.add(_overlayText(leg.arrivalTime, FormLayout.arrivalX, y, fontSize));
+      widgets.add(_overlayText(leg.fromLocation, FormLayout.fromX, y, fontSize));
+      widgets.add(_overlayText(leg.toLocation, FormLayout.toX, y, fontSize));
+      widgets.add(_overlayText(
+          leg.distanceKm == 0 ? '' : leg.distanceKm.toStringAsFixed(0),
+          FormLayout.kmX, y, fontSize));
+      widgets.add(_overlayText(leg.dayNight, FormLayout.dayNightX, y, fontSize));
 
-        final amt = _splitAmount(row.daAmount);
-        widgets.add(_overlayText(amt.rupees, FormLayout.amountRsX, y, fontSize));
-        widgets.add(_overlayText(amt.paise, FormLayout.amountPaiseX, y, fontSize));
-      } else {
-        // ── Normal travel row: one entry per form column ──────────────────
-        widgets.add(_overlayText(row.date, FormLayout.dateX, y, fontSize));
-        widgets.add(_overlayText(row.vehicleNumber, FormLayout.vehicleX, y, fontSize));
-        widgets.add(_overlayText(row.departureTime, FormLayout.departureX, y, fontSize));
-        widgets.add(_overlayText(row.arrivalTime, FormLayout.arrivalX, y, fontSize));
-        widgets.add(_overlayText(row.fromLocation, FormLayout.fromX, y, fontSize));
-        widgets.add(_overlayText(row.toLocation, FormLayout.toX, y, fontSize));
-        widgets.add(_overlayText(
-            row.distanceKm == 0 ? '' : row.distanceKm.toStringAsFixed(0),
-            FormLayout.kmX, y, fontSize));
-        widgets.add(_overlayText(row.dayNight, FormLayout.dayNightX, y, fontSize));
-
-        if (row.purpose.isNotEmpty) {
-          widgets.add(_overlayTextBox(row.purpose, FormLayout.purposeX, y,
-              fontSize, width: FormLayout.purposeWidth));
-        }
-
-        final amt = _splitAmount(row.rateAmount);
-        widgets.add(_overlayText(amt.rupees, FormLayout.amountRsX, y, fontSize));
-        widgets.add(_overlayText(amt.paise, FormLayout.amountPaiseX, y, fontSize));
-      }
+      final amt = _splitAmount(leg.rateAmount);
+      widgets.add(_overlayText(amt.rupees, FormLayout.amountRsX, y, fontSize));
+      widgets.add(_overlayText(amt.paise, FormLayout.amountPaiseX, y, fontSize));
 
       y += rowHeight;
     }
@@ -260,7 +279,79 @@ class PdfService {
     return widgets;
   }
 
-  // ── Grand total row (printed right after the last TA row) ────────────────
+  // ── Purpose column — one merged entry per Trip, vertically centered next
+  //    to that trip's legs, with a small curly-bracket spanning multi-leg
+  //    trips. Handles trips that got split across page 1/page 2 by only
+  //    drawing the bracket/text for the legs present on THIS page's list. ──
+  static List<pw.Widget> _purposeOverlay(
+    List<_FlatLeg> flatLegs,
+    double rowHeight,
+    double fontSize,
+    double startY,
+  ) {
+    final widgets = <pw.Widget>[];
+    if (flatLegs.isEmpty) return widgets;
+
+    int i = 0;
+    while (i < flatLegs.length) {
+      final tripIndex = flatLegs[i].tripIndex;
+      // Find the contiguous run of legs (within this page) belonging to
+      // the same trip.
+      int j = i;
+      while (j < flatLegs.length && flatLegs[j].tripIndex == tripIndex) {
+        j++;
+      }
+      final legCountOnThisPage = j - i;
+      final blockTopY = startY + i * rowHeight;
+      final blockHeight = legCountOnThisPage * rowHeight;
+      final purpose = flatLegs[i].purpose;
+
+      if (purpose.isNotEmpty) {
+        // Curly-bracket connector only drawn when this trip has more than 1 leg on
+        // this page — a single-leg trip just gets plain centered text.
+        if (legCountOnThisPage > 1) {
+          widgets.add(pw.Positioned(
+            left: FormLayout.purposeX - 10,
+            top: blockTopY,
+            child: pw.SizedBox(
+              height: blockHeight,
+              child: pw.Center(
+                child: pw.Text(
+                  '}',
+                  style: pw.TextStyle(
+                    font: pw.Font.courier(),
+                    fontSize: fontSize + (legCountOnThisPage * 2),
+                  ),
+                ),
+              ),
+            ),
+          ));
+        }
+
+        widgets.add(pw.Positioned(
+          left: FormLayout.purposeX,
+          top: blockTopY,
+          child: pw.SizedBox(
+            width: FormLayout.purposeWidth,
+            height: blockHeight,
+            child: pw.Center(
+              child: pw.Text(
+                purpose,
+                textAlign: pw.TextAlign.center,
+                style: pw.TextStyle(font: pw.Font.courier(), fontSize: fontSize),
+              ),
+            ),
+          ),
+        ));
+      }
+
+      i = j;
+    }
+
+    return widgets;
+  }
+
+  // ── Grand total row (printed right after the last TA leg) ────────────────
   static List<pw.Widget> _totalOverlay(
       TaFormData taData, double y, double fontSize) {
     final amt = _splitAmount(taData.grandTotal);
@@ -352,8 +443,7 @@ class PdfService {
     );
   }
 
-  // ── Width-constrained (wrapping) text overlay — used for long fields like
-  //    "Object of Journey" and "Stay at ..." which can run past one column ──
+  // ── Width-constrained (wrapping) text overlay ─────────────────────────────
   static pw.Widget _overlayTextBox(
     String text,
     double x,
@@ -378,8 +468,7 @@ class PdfService {
     );
   }
 
-  // ── Load a bundled asset (returns null if missing, e.g. dev hasn't added
-  //    the form scans yet — pages then render with a blank/white background) ─
+  // ── Load a bundled asset (returns null if missing) ────────────────────────
   static Future<Uint8List?> _loadAsset(String path) async {
     try {
       final data = await rootBundle.load(path);

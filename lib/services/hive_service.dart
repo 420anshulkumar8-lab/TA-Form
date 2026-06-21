@@ -51,6 +51,10 @@ class HiveService {
   }
 
   static Future<void> saveProfile(EmployeeProfile profile) async {
+    // Delete-then-put avoids any stale HiveObject binding from a previously
+    // read instance, so every read after this always reflects the latest
+    // save immediately (no app-restart needed to see the new value).
+    await _profileBoxRef.delete('profile');
     await _profileBoxRef.put('profile', profile);
   }
 
