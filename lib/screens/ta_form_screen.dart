@@ -88,21 +88,25 @@ class _TaFormScreenState extends State<TaFormScreen> {
       final updated = update(_taRows[index]);
       _taRows[index] = _withRecalculatedAmount(updated);
     });
+    _saveDraft();
   }
 
   void _addTaRow() {
     setState(() => _taRows.add(const TripRow(rowType: RowType.travel)));
+    _saveDraft();
   }
 
   void _removeTaRow(int index) {
     if (_taRows.length <= 1) return;
     setState(() => _taRows.removeAt(index));
+    _saveDraft();
   }
 
   // ── Contingent row mutation helpers ───────────────────────────────────────
   void _updateContingentRow(
       int index, ContingentEntry Function(ContingentEntry) update) {
     setState(() => _contingentEntries[index] = update(_contingentEntries[index]));
+    _saveDraft();
   }
 
   void _addContingentSection() {
@@ -112,15 +116,18 @@ class _TaFormScreenState extends State<TaFormScreen> {
         _contingentEntries = [const ContingentEntry()];
       }
     });
+    _saveDraft();
   }
 
   void _addContingentRow() {
     setState(() => _contingentEntries.add(const ContingentEntry()));
+    _saveDraft();
   }
 
   void _removeContingentRow(int index) {
     if (_contingentEntries.length <= 1) return;
     setState(() => _contingentEntries.removeAt(index));
+    _saveDraft();
   }
 
   void _removeContingentSection() {
@@ -128,6 +135,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
       _showContingent = false;
       _contingentEntries = [];
     });
+    _saveDraft();
   }
 
   // ── Totals ─────────────────────────────────────────────────────────────
@@ -145,8 +153,11 @@ class _TaFormScreenState extends State<TaFormScreen> {
   bool get _hasContingentData =>
       _showContingent && _contingentEntries.any((e) => e.date.isNotEmpty || e.amount > 0);
 
-  // ── Save (without finalizing) ─────────────────────────────────────────────
-  void _saveDraft() {
+  // ── Save (without finalizing) — called after every single edit so a
+  //    draft is never lost, regardless of how the user leaves the screen. ──
+  Future<void> _saveDraft() async {
+    if (!_isEditing) return; // never overwrite a submitted/final session
+
     final profile = _profile;
 
     widget.session.formDataTa = _hasTaData
@@ -176,7 +187,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
     widget.session.status =
         (_hasTaData || _hasContingentData) ? SessionStatus.draft : SessionStatus.fresh;
     widget.session.lastUpdated = DateTime.now().toIso8601String();
-    HiveService.saveSession(widget.session);
+    await HiveService.saveSession(widget.session);
   }
 
   // ── Final ──────────────────────────────────────────────────────────────
@@ -291,13 +302,10 @@ class _TaFormScreenState extends State<TaFormScreen> {
     }
   }
 
-  @override
-  void dispose() {
-    if (_isEditing) {
-      _saveDraft();
-    }
-    super.dispose();
-  }
+  // Note: no save-on-dispose here anymore. Every row/field edit already
+  // calls _saveDraft() the moment it happens (see mutation helpers above),
+  // so the draft is always persisted to Hive before the user can navigate
+  // away — dispose() runs too late/unreliably for async writes to finish.
 
   @override
   Widget build(BuildContext context) {

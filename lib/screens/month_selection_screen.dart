@@ -129,7 +129,7 @@ class _MonthCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (session != null)
+                  if (session != null && session.status != SessionStatus.fresh)
                     StatusBadgeWidget(status: session.status),
                 ],
               ),

@@ -121,6 +121,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ? _departmentOtherCtrl.text.trim()
         : _department;
 
+    final existingPhoto = context.read<AppProvider>().profile.photoPath;
+
     final profile = EmployeeProfile(
       name: _nameCtrl.text.trim(),
       designation: _designationCtrl.text.trim(),
@@ -132,6 +134,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       employeeNo: _employeeNoCtrl.text.trim(),
       railway: railwayValue,
       department: departmentValue,
+      photoPath: existingPhoto,
     );
 
     await context.read<AppProvider>().saveProfile(profile);
