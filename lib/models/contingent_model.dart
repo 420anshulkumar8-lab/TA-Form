@@ -1,50 +1,56 @@
 // lib/models/contingent_model.dart
 // ─────────────────────────────────────────────────────────────────────────────
 // Plain Dart models for Contingent Bill data. Stored as JSON in Hive.
+// Built manually by the user with the same (+) / delete-row controls as the
+// TA table.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class ContingentEntry {
-  final int entryId;
-  final String date; // DD/MM/YYYY
-  final String by; // Auto/Taxi/Rickshaw/Bus/Other
+  final String date; // DD/MM/YYYY — must fall within the session's month
   final String fromLocation;
   final String toLocation;
-  final double distanceKm;
+  final double distanceKm; // optional
   final double amount;
-  final bool verifiedAgainstTa;
 
   const ContingentEntry({
-    required this.entryId,
-    required this.date,
-    required this.by,
-    required this.fromLocation,
-    required this.toLocation,
+    this.date = '',
+    this.fromLocation = '',
+    this.toLocation = '',
     this.distanceKm = 0,
-    required this.amount,
-    this.verifiedAgainstTa = true,
+    this.amount = 0,
   });
+
+  ContingentEntry copyWith({
+    String? date,
+    String? fromLocation,
+    String? toLocation,
+    double? distanceKm,
+    double? amount,
+  }) {
+    return ContingentEntry(
+      date: date ?? this.date,
+      fromLocation: fromLocation ?? this.fromLocation,
+      toLocation: toLocation ?? this.toLocation,
+      distanceKm: distanceKm ?? this.distanceKm,
+      amount: amount ?? this.amount,
+    );
+  }
 
   factory ContingentEntry.fromJson(Map<String, dynamic> json) =>
       ContingentEntry(
-        entryId: json['entry_id'] ?? 0,
         date: json['date'] ?? '',
-        by: json['by'] ?? '',
         fromLocation: json['from_location'] ?? '',
         toLocation: json['to_location'] ?? '',
         distanceKm: (json['distance_km'] ?? 0).toDouble(),
         amount: (json['amount'] ?? 0).toDouble(),
-        verifiedAgainstTa: json['verified_against_ta'] ?? true,
       );
 
   Map<String, dynamic> toJson() => {
-        'entry_id': entryId,
         'date': date,
-        'by': by,
         'from_location': fromLocation,
         'to_location': toLocation,
         'distance_km': distanceKm,
         'amount': amount,
-        'verified_against_ta': verifiedAgainstTa,
       };
 }
 
@@ -55,7 +61,7 @@ class ContingentFormData {
   final String year;
   final List<ContingentEntry> entries;
   final double totalAmount;
-  final String status; // "pending" | "submitted"
+  final String status; // "draft" | "submitted"
 
   const ContingentFormData({
     this.formRef = 'Contingent Bill',
@@ -64,7 +70,7 @@ class ContingentFormData {
     required this.year,
     required this.entries,
     this.totalAmount = 0,
-    this.status = 'pending',
+    this.status = 'draft',
   });
 
   factory ContingentFormData.fromJson(Map<String, dynamic> json) =>
@@ -77,7 +83,7 @@ class ContingentFormData {
             .map((e) => ContingentEntry.fromJson(e as Map<String, dynamic>))
             .toList(),
         totalAmount: (json['total_amount'] ?? 0).toDouble(),
-        status: json['status'] ?? 'pending',
+        status: json['status'] ?? 'draft',
       );
 
   Map<String, dynamic> toJson() => {

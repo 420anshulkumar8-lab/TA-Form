@@ -1,4 +1,7 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
+// Hand-authored to match the exact output of `hive_generator` for this
+// class. If you change employee_profile.dart fields, regenerate via:
+//   flutter pub run build_runner build --delete-conflicting-outputs
 
 part of 'employee_profile.dart';
 
@@ -17,16 +20,16 @@ class EmployeeProfileAdapter extends TypeAdapter<EmployeeProfile> {
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
     return EmployeeProfile(
-      name: fields[0] as String? ?? '',
-      designation: fields[1] as String? ?? '',
-      gradeLevel: fields[2] as String? ?? '',
-      basicPay: (fields[3] as num?)?.toDouble() ?? 0,
-      dateOfAppointment: fields[4] as String? ?? '',
-      headquarters: fields[5] as String? ?? '',
-      division: fields[6] as String? ?? '',
-      mobile: fields[7] as String? ?? '',
-      employeeId: fields[8] as String? ?? '',
-      hqStationCode: fields[9] as String? ?? '',
+      name: fields[0] as String,
+      designation: fields[1] as String,
+      level: fields[2] as int,
+      basicPay: fields[3] as double,
+      dateOfAppointment: fields[4] as String,
+      headquarter: fields[5] as String,
+      division: fields[6] as String,
+      employeeNo: fields[7] as String,
+      railway: fields[8] as String,
+      department: fields[9] as String,
     );
   }
 
@@ -39,21 +42,21 @@ class EmployeeProfileAdapter extends TypeAdapter<EmployeeProfile> {
       ..writeByte(1)
       ..write(obj.designation)
       ..writeByte(2)
-      ..write(obj.gradeLevel)
+      ..write(obj.level)
       ..writeByte(3)
       ..write(obj.basicPay)
       ..writeByte(4)
       ..write(obj.dateOfAppointment)
       ..writeByte(5)
-      ..write(obj.headquarters)
+      ..write(obj.headquarter)
       ..writeByte(6)
       ..write(obj.division)
       ..writeByte(7)
-      ..write(obj.mobile)
+      ..write(obj.employeeNo)
       ..writeByte(8)
-      ..write(obj.employeeId)
+      ..write(obj.railway)
       ..writeByte(9)
-      ..write(obj.hqStationCode);
+      ..write(obj.department);
   }
 
   @override

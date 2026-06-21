@@ -12,7 +12,7 @@ class EmployeeProfile extends HiveObject {
   String designation;
 
   @HiveField(2)
-  String gradeLevel; // e.g. "Level-6"
+  int level; // 1-9
 
   @HiveField(3)
   double basicPay;
@@ -21,63 +21,69 @@ class EmployeeProfile extends HiveObject {
   String dateOfAppointment; // DD/MM/YYYY
 
   @HiveField(5)
-  String headquarters;
+  String headquarter;
 
   @HiveField(6)
   String division;
 
   @HiveField(7)
-  String mobile;
+  String employeeNo;
 
   @HiveField(8)
-  String employeeId;
+  String railway; // dropdown value, or the custom text if "Other"
 
   @HiveField(9)
-  String hqStationCode; // e.g. GZB, NDLS — for AI context
+  String department; // dropdown value, or the custom text if "Other"
 
   EmployeeProfile({
     this.name = '',
     this.designation = '',
-    this.gradeLevel = '',
+    this.level = 1,
     this.basicPay = 0,
     this.dateOfAppointment = '',
-    this.headquarters = '',
+    this.headquarter = '',
     this.division = '',
-    this.mobile = '',
-    this.employeeId = '',
-    this.hqStationCode = '',
+    this.employeeNo = '',
+    this.railway = '',
+    this.department = '',
   });
 
   bool get isComplete =>
       name.isNotEmpty &&
       designation.isNotEmpty &&
-      gradeLevel.isNotEmpty &&
-      basicPay > 0 &&
-      headquarters.isNotEmpty &&
-      division.isNotEmpty;
+      employeeNo.isNotEmpty &&
+      railway.isNotEmpty &&
+      division.isNotEmpty &&
+      headquarter.isNotEmpty &&
+      department.isNotEmpty &&
+      basicPay > 0;
 
   Map<String, dynamic> toJson() => {
         'name': name,
-        'employee_id': employeeId,
         'designation': designation,
-        'department': division,
-        'headquarters': headquarters,
-        'hq_station_code': hqStationCode,
-        'grade_pay_level': gradeLevel,
+        'level': level,
         'basic_pay': basicPay,
         'date_of_appointment': dateOfAppointment,
+        'headquarter': headquarter,
+        'division': division,
+        'employee_no': employeeNo,
+        'railway': railway,
+        'department': department,
       };
 
   factory EmployeeProfile.fromJson(Map<String, dynamic> json) =>
       EmployeeProfile(
         name: json['name'] ?? '',
         designation: json['designation'] ?? '',
-        gradeLevel: json['grade_pay_level'] ?? '',
+        level: (json['level'] ?? 1) is int
+            ? json['level'] ?? 1
+            : int.tryParse('${json['level']}') ?? 1,
         basicPay: (json['basic_pay'] ?? 0).toDouble(),
-        headquarters: json['headquarters'] ?? '',
-        hqStationCode: json['hq_station_code'] ?? '',
-        division: json['department'] ?? '',
-        employeeId: json['employee_id'] ?? '',
         dateOfAppointment: json['date_of_appointment'] ?? '',
+        headquarter: json['headquarter'] ?? '',
+        division: json['division'] ?? '',
+        employeeNo: json['employee_no'] ?? '',
+        railway: json['railway'] ?? '',
+        department: json['department'] ?? '',
       );
 }
