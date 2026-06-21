@@ -1,73 +1,37 @@
 // lib/config/ta_rates.dart
-// Edit this file when government rates change.
-
-class TaRateInfo {
-  final double taPerKm;
-  final double daPerDay;
-  const TaRateInfo({required this.taPerKm, required this.daPerDay});
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// TA amount is auto-calculated from the duration between departure and
+// arrival time, and the employee's Level (1-9). Edit this file when
+// government rates change.
+// ─────────────────────────────────────────────────────────────────────────────
 
 class TaRates {
-  // Exact per-level rates (from Claude_Original — more precise)
-  static const Map<String, TaRateInfo> _levelRates = {
-    'Level-1':  TaRateInfo(taPerKm: 0.5, daPerDay: 100),
-    'Level-2':  TaRateInfo(taPerKm: 0.5, daPerDay: 100),
-    'Level-3':  TaRateInfo(taPerKm: 1.0, daPerDay: 200),
-    'Level-4':  TaRateInfo(taPerKm: 1.0, daPerDay: 200),
-    'Level-5':  TaRateInfo(taPerKm: 1.0, daPerDay: 200),
-    'Level-6':  TaRateInfo(taPerKm: 2.5, daPerDay: 250),
-    'Level-7':  TaRateInfo(taPerKm: 2.5, daPerDay: 250),
-    'Level-8':  TaRateInfo(taPerKm: 2.5, daPerDay: 250),
-    'Level-9':  TaRateInfo(taPerKm: 3.0, daPerDay: 350),
-    'Level-10': TaRateInfo(taPerKm: 3.0, daPerDay: 350),
-    'Level-11': TaRateInfo(taPerKm: 3.0, daPerDay: 350),
-    'Level-12': TaRateInfo(taPerKm: 4.0, daPerDay: 500),
-    'Level-13': TaRateInfo(taPerKm: 4.0, daPerDay: 500),
-    'Level-14': TaRateInfo(taPerKm: 4.0, daPerDay: 500),
-  };
+  // Level 1-5 slabs
+  static const double level1to5Upto6h = 187.5;
+  static const double level1to5Upto12h = 437.5;
+  static const double level1to5Above12h = 625.0;
 
-  static TaRateInfo ratesForGradeLevel(String gradeLevel) {
-    // Try exact match first
-    if (_levelRates.containsKey(gradeLevel)) {
-      return _levelRates[gradeLevel]!;
+  // Level 6-9 slabs
+  static const double level6to9Upto6h = 300.0;
+  static const double level6to9Upto12h = 700.0;
+  static const double level6to9Above12h = 1000.0;
+
+  /// Returns the TA amount for a single travel row given the employee's
+  /// [level] (1-9) and the journey [duration].
+  ///
+  ///   duration <= 6h   → "upto6h" slab
+  ///   6h < duration <= 12h → "upto12h" slab
+  ///   duration > 12h   → "above12h" slab
+  static double amountForDuration(int level, Duration duration) {
+    final hours = duration.inMinutes / 60.0;
+    final isHigherLevel = level >= 6;
+
+    if (hours <= 6) {
+      return isHigherLevel ? level6to9Upto6h : level1to5Upto6h;
+    } else if (hours <= 12) {
+      return isHigherLevel ? level6to9Upto12h : level1to5Upto12h;
+    } else {
+      return isHigherLevel ? level6to9Above12h : level1to5Above12h;
     }
-    // Fallback: parse level number
-    final clean = gradeLevel.replaceAll(RegExp(r'[^0-9]'), '').trim();
-    final level = int.tryParse(clean) ?? 6;
-    if (level <= 2) return _levelRates['Level-1']!;
-    if (level <= 5) return _levelRates['Level-3']!;
-    if (level <= 8) return _levelRates['Level-6']!;
-    if (level <= 11) return _levelRates['Level-9']!;
-    return _levelRates['Level-12']!;
-  }
-
-  static double getTARate(String gradeLevel) =>
-      ratesForGradeLevel(gradeLevel).taPerKm;
-
-  static double getDARate(String gradeLevel) =>
-      ratesForGradeLevel(gradeLevel).daPerDay;
-
-  // Mode-based mileage rates
-  static const Map<String, double> _mileageRates = {
-    'Own Vehicle (Car)': 0.65,
-    'Own Vehicle (Motorcycle)': 0.35,
-    'Auto Rickshaw': 0.20,
-    'Bus': 0.10,
-    'Train': 0.00,
-    'Taxi': 0.30,
-    'Other': 0.20,
-  };
-
-  static double getMileageRate(String mode) {
-    for (final entry in _mileageRates.entries) {
-      if (mode.toLowerCase().contains(
-          entry.key.toLowerCase().split(' ')[0])) {
-        return entry.value;
-      }
-    }
-    return _mileageRates[mode] ?? 0.20;
   }
 }
-
-// Alias for backward compatibility
-typedef TaRatesConfig = TaRates;

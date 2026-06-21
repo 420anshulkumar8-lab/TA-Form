@@ -17,6 +17,14 @@
 // prints slightly off, nudge the corresponding X/Y constant below by a few
 // points and regenerate. This is normal — exact alignment depends a little on
 // your printer/scanner margins.
+//
+// CONTINGENT BILL: prints directly below the TA table, on whichever page the
+// TA table's last row + Grand Total ends on (page 1 or page 2, both still
+// using the GA-31 scanned background — no separate blank page). The starting
+// Y for the Contingent block is computed at render time from where the TA
+// table actually ended, so the two tables never overlap regardless of how
+// many TA rows there are. Adjust `contingentGapAfterTa` below if you want
+// more/less breathing room between the two tables.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class FormLayout {
@@ -100,6 +108,7 @@ class FormLayout {
   static const double rowHeightCompact = 11.0;
 
   /// Row height (pt) for the given total number of TA entries.
+  /// More entries → smaller spacing. Fewer entries → larger spacing.
   static double rowHeightForCount(int entryCount) {
     if (entryCount <= 19) return rowHeightMax;
     if (entryCount <= 30) return rowHeightMid;
@@ -124,15 +133,42 @@ class FormLayout {
       ((tableBottomY2 - firstRowY2) / rowHeight).floor();
 
   // ════════════════════════════════════════════════════════════════════════
-  // Contingent bill — printed on its own blank A4 page after the GA-31 scans
-  // (the Contingent Bill is a separate form with no scanned background here)
+  // Contingent bill — printed directly below the TA table on whichever
+  // scanned page (1 or 2) the TA table's Grand Total row ended on. Uses the
+  // same X column positions style as the TA table, sized to the same
+  // dynamic row-height/font-size rules (more entries = tighter spacing).
+  //
+  // ⚠️ These X positions are a starting approximation — nudge them once you
+  // can compare a generated PDF against the printed Contingent area of your
+  // physical form.
   // ════════════════════════════════════════════════════════════════════════
-  static const double contingentTitleY = 50.0;
-  static const double contingentStartY = 90.0;
-  static const double contingentDateX = 45.0;
-  static const double contingentByX = 98.0;
-  static const double contingentFromX = 145.0;
-  static const double contingentToX = 230.0;
+  static const double contingentGapAfterTa = 18.0; // space below TA grand total
+  static const double contingentDateX = 38.0;
+  static const double contingentFromX = 130.0;
+  static const double contingentToX = 220.0;
   static const double contingentKmX = 320.0;
-  static const double contingentAmountX = 370.0;
+  static const double contingentAmountX = 400.0;
+
+  // Bottom limits for the Contingent block, mirroring the TA table bounds —
+  // used to decide whether the Contingent rows still fit on the same page
+  // as the TA total, or need to continue further down / onto page 2.
+  static const double contingentBottomY1 = 705.0;
+  static const double contingentBottomY2 = 372.0;
+
+  /// Row height (pt) for the given total number of Contingent entries.
+  /// Same compacting behaviour as the TA table.
+  static double contingentRowHeightForCount(int entryCount) {
+    if (entryCount <= 10) return rowHeightMax;
+    if (entryCount <= 18) return rowHeightMid;
+    if (entryCount <= 28) return rowHeightMin;
+    return rowHeightCompact;
+  }
+
+  /// Font size (pt) for the given total number of Contingent entries.
+  static double contingentFontSizeForRows(int rows) {
+    if (rows <= 10) return fontSizeNormal;
+    if (rows <= 18) return fontSizeMid;
+    if (rows <= 28) return fontSizeCompact;
+    return fontSizeMin;
+  }
 }
