@@ -6,6 +6,8 @@ import '../screens/profile_screen.dart';
 import '../screens/month_selection_screen.dart';
 import '../screens/ta_form_screen.dart';
 import '../screens/pdf_preview_screen.dart';
+import '../screens/about_screen.dart';
+import '../screens/privacy_policy_screen.dart';
 
 class AppRoutes {
   static const String splash = '/';
@@ -14,12 +16,16 @@ class AppRoutes {
   static const String monthSelection = '/month-selection';
   static const String taForm = '/ta-form';
   static const String pdfPreview = '/pdf-preview';
+  static const String about = '/about';
+  static const String privacyPolicy = '/privacy-policy';
 
   static Map<String, WidgetBuilder> get routes => {
         splash: (_) => const SplashScreen(),
         home: (_) => const HomeScreen(),
         profile: (_) => const ProfileScreen(),
         monthSelection: (_) => const MonthSelectionScreen(),
+        about: (_) => const AboutScreen(),
+        privacyPolicy: (_) => const PrivacyPolicyScreen(),
       };
 
   static Route<dynamic>? onGenerateRoute(RouteSettings settings) {
