@@ -1,7 +1,5 @@
 // lib/screens/splash_screen.dart
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../providers/app_provider.dart';
 import 'home_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -15,7 +13,6 @@ class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _fadeAnim;
-  String _statusMessage = '';
 
   @override
   void initState() {
@@ -25,32 +22,14 @@ class _SplashScreenState extends State<SplashScreen>
       vsync: this,
       duration: const Duration(milliseconds: 800),
     );
-    _fadeAnim =
-        CurvedAnimation(parent: _controller, curve: Curves.easeIn);
+    _fadeAnim = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
     _controller.forward();
 
-    _initApp();
+    _goHomeAfterDelay();
   }
 
-  Future<void> _initApp() async {
-    final provider = context.read<AppProvider>();
-
-    // Fetch remote config in background while splash shows
-    await provider.loadRemoteConfig();
-
-    if (mounted) {
-      final result = provider.configError;
-      if (result != null) {
-        setState(() => _statusMessage = result);
-      } else {
-        // DEBUG: hamesha dikhao ki kaunsa model load hua (fresh ya cache)
-        setState(() => _statusMessage = 'Model: ${provider.model}');
-      }
-    }
-
-    // Always wait 3 seconds total
+  Future<void> _goHomeAfterDelay() async {
     await Future.delayed(const Duration(seconds: 3));
-
     if (mounted) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const HomeScreen()),
@@ -140,21 +119,6 @@ class _SplashScreenState extends State<SplashScreen>
                   ),
                 ),
               ),
-
-              if (_statusMessage.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Text(
-                    _statusMessage,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.orangeAccent,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-              ],
             ],
           ),
         ),
