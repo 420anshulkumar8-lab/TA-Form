@@ -1,5 +1,5 @@
 name: railway_ta_form
-description: Railway Travel Allowance Form App with AI assistance.
+description: Railway Travel Allowance Form App (manual entry, no AI).
 publish_to: 'none'
 
 version: 1.0.0+1
@@ -17,11 +17,6 @@ dependencies:
   # Local storage
   hive: ^2.2.3
   hive_flutter: ^1.1.0
-  shared_preferences: ^2.2.3
-
-  # HTTP
-  http: ^1.2.1
-  dio: ^5.4.3
 
   # PDF generation & printing
   pdf: ^3.10.8
@@ -32,24 +27,11 @@ dependencies:
   path: ^1.9.0
   share_plus: ^9.0.0
 
-  # Permissions
-  permission_handler: ^11.3.1
-
   # UI
   google_fonts: ^6.2.1       # Font - no download needed!
-  flutter_markdown: ^0.6.22
   package_info_plus: ^8.0.2
   cupertino_icons: ^1.0.8
   intl: ^0.19.0
-
-  # URL launching
-  url_launcher: ^6.3.0
-
-  # Connectivity
-  connectivity_plus: ^6.0.3
-
-  # Unique IDs
-  uuid: ^4.4.0
 
 dev_dependencies:
   flutter_test:

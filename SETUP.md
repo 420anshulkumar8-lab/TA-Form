@@ -4,7 +4,6 @@
 
 - Flutter SDK >= 3.2.0
 - Android Studio or VS Code with Flutter extension
-- An Anthropic Claude API key
 
 ---
 
@@ -30,14 +29,6 @@ The generated file `lib/models/employee_profile.g.dart` is already included.
 
 ## 4. Add Assets
 
-### Fonts (Inter)
-Download Inter from https://fonts.google.com/specimen/Inter  
-Place these files in `assets/fonts/`:
-- `Inter-Regular.ttf`
-- `Inter-Medium.ttf`
-- `Inter-SemiBold.ttf`
-- `Inter-Bold.ttf`
-
 ### GA-31 Form Scans (already included)
 This project ships with two scanned pages of the GA-31 form, already placed at:
 ```
@@ -56,50 +47,36 @@ against your physical form, then nudge the X/Y constants in `FormLayout`
 If either PNG is missing, the app still works — that page will be generated on
 a blank white background with all the text, no scanned form behind it.
 
-### How the 2-page layout works
+### How the layout works
 - **Page 1** gets the header fields (name, designation, pay, HQ, etc.) and as
   many TA-table rows as fit in the table area on the front page.
 - **Page 2** automatically receives any remaining TA rows as a continuation of
   the same table, plus the employee's name in the certificate paragraph.
 - The Grand Total row is printed right after the last TA entry, on whichever
   page that entry landed on.
-- **Page 3+** (only if Contingent Bill is selected) is a separate blank A4
-  page for the Contingent Bill — it isn't part of the GA-31 scan.
+- **Contingent Bill** (if filled) prints directly below the TA table's Grand
+  Total, on the same scanned page — no separate blank page. If it doesn't fit
+  in the remaining space on that page, it continues onto page 2.
+  Tune `contingentDateX/FromX/ToX/KmX/AmountX` and
+  `contingentGapAfterTa` in `FormLayout` once you can compare a generated
+  PDF against your physical form's Contingent area.
 
 ---
 
-## 5. Configure Remote API Key
+## 5. Adjust TA Rates
 
-Open `lib/config/remote_config.dart` and set:
+Open `lib/config/ta_rates.dart`. Amount is calculated from the journey
+duration (departure → arrival) and the employee's Level (1-9):
 
-```dart
-static const String configUrl = 'https://raw.githubusercontent.com/YOUR-ORG/YOUR-PRIVATE-REPO/main/config.json';
-```
-
-Create `config.json` in that private GitHub repo:
-```json
-{
-  "api_key": "sk-ant-api03-XXXXXXXXX",
-  "model": "claude-sonnet-4-6"
-}
-```
-
-The app fetches this on every startup and caches it in Hive. If the network is
-unavailable, it falls back to the cached key. The API key is NEVER bundled
-inside the APK.
+| Duration       | Level 1–5 | Level 6–9 |
+|----------------|-----------|-----------|
+| up to 6 hours  | ₹187.5    | ₹300      |
+| 6–12 hours     | ₹437.5    | ₹700      |
+| above 12 hours | ₹625      | ₹1000     |
 
 ---
 
-## 6. Adjust TA / DA Rates
-
-Open `lib/config/ta_rates.dart`:
-- `_mileageRates` — per-km rates by transport mode (RM)
-- `contingentDailyRate` — daily rate for outstation allowance
-- `_bands` — grade-level DA rate bands
-
----
-
-## 7. Run the App
+## 6. Run the App
 
 ```bash
 flutter run                     # debug
@@ -109,7 +86,7 @@ flutter build appbundle         # Play Store bundle
 
 ---
 
-## 8. Android Permissions
+## 7. Android Permissions
 
 The following permissions are required (already in `android/app/src/main/AndroidManifest.xml` — add if missing):
 
@@ -126,11 +103,10 @@ For Android 13+, also add:
 
 ---
 
-## 9. Common Issues
+## 8. Common Issues
 
 | Problem | Fix |
 |---|---|
 | Hive adapter not found | Run `build_runner build` |
 | PDF text misaligned | Tune X/Y in `lib/config/form_layout.dart` |
-| API key not loading | Check GitHub URL in `remote_config.dart`, ensure repo is accessible |
-| Font not applied | Ensure `assets/fonts/*.ttf` files exist and match `pubspec.yaml` |
+| Contingent table overlaps TA table | Increase `contingentGapAfterTa` in `FormLayout` |
