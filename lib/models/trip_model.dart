@@ -2,103 +2,83 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Plain Dart models for TA data. Stored as JSON inside Hive ta_sessions.
 //
-// The form is a single flat list of rows the user builds manually with the
-// (+) / delete-row controls — there is no automatic "trip" detection.
+// A month's TA is a list of TripGroups ("Trip 1", "Trip 2", ...). Each trip
+// represents one headquarters-out-and-back journey and contains one or more
+// TripRow "legs" (e.g. GZB→NDLS, NDLS→GZB). All legs of a trip share a single
+// Purpose, entered once and shown merged across the trip's rows.
 // ─────────────────────────────────────────────────────────────────────────────
 
-enum RowType { travel, stay }
-
-/// How the "Vehicle / Train No." cell of a travel row was filled.
+/// How the "Vehicle / Train No." cell of a leg was filled.
 enum VehicleEntryType { train, other }
 
+/// One travel leg (a single row in the printed table) belonging to a Trip.
 class TripRow {
-  final RowType rowType;
-
-  // ── Travel row fields ──────────────────────────────────────────────────
   final String date; // DD/MM/YYYY — must fall within the session's month
+  final bool dateIsSuggested; // true until the user explicitly confirms it
   final VehicleEntryType vehicleEntryType;
   final String vehicleNumber; // 5-digit train no., or free text if "other"
   final String departureTime; // HH:MM (24h)
   final String arrivalTime; // HH:MM (24h)
   final String fromLocation;
+  final bool fromIsSuggested; // true until the user explicitly confirms it
   final String toLocation;
+  final bool toIsSuggested; // true until the user explicitly confirms it
   final double distanceKm; // optional
   final String dayNight; // "Day" | "Night" | "" (optional)
-  final String purpose; // free text
   final double rateAmount; // auto-calculated from departure/arrival + level
 
-  // ── Stay row fields ───────────────────────────────────────────────────
-  final String dateFrom; // DD/MM/YYYY
-  final String dateTo; // DD/MM/YYYY
-  final String location;
-  final int nights;
-  final double daAmount;
-
   const TripRow({
-    required this.rowType,
     this.date = '',
+    this.dateIsSuggested = false,
     this.vehicleEntryType = VehicleEntryType.train,
     this.vehicleNumber = '',
     this.departureTime = '',
     this.arrivalTime = '',
     this.fromLocation = '',
+    this.fromIsSuggested = false,
     this.toLocation = '',
+    this.toIsSuggested = false,
     this.distanceKm = 0,
     this.dayNight = '',
-    this.purpose = '',
     this.rateAmount = 0,
-    this.dateFrom = '',
-    this.dateTo = '',
-    this.location = '',
-    this.nights = 0,
-    this.daAmount = 0,
   });
 
   TripRow copyWith({
-    RowType? rowType,
     String? date,
+    bool? dateIsSuggested,
     VehicleEntryType? vehicleEntryType,
     String? vehicleNumber,
     String? departureTime,
     String? arrivalTime,
     String? fromLocation,
+    bool? fromIsSuggested,
     String? toLocation,
+    bool? toIsSuggested,
     double? distanceKm,
     String? dayNight,
-    String? purpose,
     double? rateAmount,
-    String? dateFrom,
-    String? dateTo,
-    String? location,
-    int? nights,
-    double? daAmount,
   }) {
     return TripRow(
-      rowType: rowType ?? this.rowType,
       date: date ?? this.date,
+      dateIsSuggested: dateIsSuggested ?? this.dateIsSuggested,
       vehicleEntryType: vehicleEntryType ?? this.vehicleEntryType,
       vehicleNumber: vehicleNumber ?? this.vehicleNumber,
       departureTime: departureTime ?? this.departureTime,
       arrivalTime: arrivalTime ?? this.arrivalTime,
       fromLocation: fromLocation ?? this.fromLocation,
+      fromIsSuggested: fromIsSuggested ?? this.fromIsSuggested,
       toLocation: toLocation ?? this.toLocation,
+      toIsSuggested: toIsSuggested ?? this.toIsSuggested,
       distanceKm: distanceKm ?? this.distanceKm,
       dayNight: dayNight ?? this.dayNight,
-      purpose: purpose ?? this.purpose,
       rateAmount: rateAmount ?? this.rateAmount,
-      dateFrom: dateFrom ?? this.dateFrom,
-      dateTo: dateTo ?? this.dateTo,
-      location: location ?? this.location,
-      nights: nights ?? this.nights,
-      daAmount: daAmount ?? this.daAmount,
     );
   }
 
   factory TripRow.fromJson(Map<String, dynamic> json) {
-    final type = json['row_type'] == 'stay' ? RowType.stay : RowType.travel;
     return TripRow(
-      rowType: type,
       date: json['date'] ?? '',
+      dateIsSuggested: json['date_is_suggested'] ?? false,
       vehicleEntryType: json['vehicle_entry_type'] == 'other'
           ? VehicleEntryType.other
           : VehicleEntryType.train,
@@ -106,46 +86,68 @@ class TripRow {
       departureTime: json['departure_time'] ?? '',
       arrivalTime: json['arrival_time'] ?? '',
       fromLocation: json['from_location'] ?? '',
+      fromIsSuggested: json['from_is_suggested'] ?? false,
       toLocation: json['to_location'] ?? '',
+      toIsSuggested: json['to_is_suggested'] ?? false,
       distanceKm: (json['distance_km'] ?? 0).toDouble(),
       dayNight: json['day_night'] ?? '',
-      purpose: json['purpose'] ?? '',
       rateAmount: (json['rate_amount'] ?? 0).toDouble(),
-      dateFrom: json['date_from'] ?? '',
-      dateTo: json['date_to'] ?? '',
-      location: json['location'] ?? '',
-      nights: json['nights'] ?? 0,
-      daAmount: (json['da_amount'] ?? 0).toDouble(),
     );
   }
 
-  Map<String, dynamic> toJson() {
-    if (rowType == RowType.stay) {
-      return {
-        'row_type': 'stay',
-        'date_from': dateFrom,
-        'date_to': dateTo,
-        'location': location,
-        'nights': nights,
-        'da_amount': daAmount,
+  Map<String, dynamic> toJson() => {
+        'date': date,
+        'date_is_suggested': dateIsSuggested,
+        'vehicle_entry_type':
+            vehicleEntryType == VehicleEntryType.other ? 'other' : 'train',
+        'vehicle_number': vehicleNumber,
+        'departure_time': departureTime,
+        'arrival_time': arrivalTime,
+        'from_location': fromLocation,
+        'from_is_suggested': fromIsSuggested,
+        'to_location': toLocation,
+        'to_is_suggested': toIsSuggested,
+        'distance_km': distanceKm,
+        'day_night': dayNight,
+        'rate_amount': rateAmount,
       };
-    }
-    return {
-      'row_type': 'travel',
-      'date': date,
-      'vehicle_entry_type':
-          vehicleEntryType == VehicleEntryType.other ? 'other' : 'train',
-      'vehicle_number': vehicleNumber,
-      'departure_time': departureTime,
-      'arrival_time': arrivalTime,
-      'from_location': fromLocation,
-      'to_location': toLocation,
-      'distance_km': distanceKm,
-      'day_night': dayNight,
-      'purpose': purpose,
-      'rate_amount': rateAmount,
-    };
+}
+
+/// A single headquarters-out-and-back trip: one shared Purpose + its legs.
+class TripGroup {
+  final String purpose; // shared by every leg in this trip
+  final List<TripRow> legs;
+
+  const TripGroup({
+    this.purpose = '',
+    required this.legs,
+  });
+
+  TripGroup copyWith({String? purpose, List<TripRow>? legs}) {
+    return TripGroup(
+      purpose: purpose ?? this.purpose,
+      legs: legs ?? this.legs,
+    );
   }
+
+  double get tripTotal => legs.fold(0.0, (sum, r) => sum + r.rateAmount);
+
+  factory TripGroup.fromJson(Map<String, dynamic> json) => TripGroup(
+        purpose: json['purpose'] ?? '',
+        legs: (json['legs'] as List<dynamic>? ?? [])
+            .map((r) => TripRow.fromJson(r as Map<String, dynamic>))
+            .toList(),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'purpose': purpose,
+        'legs': legs.map((r) => r.toJson()).toList(),
+      };
+
+  /// A fresh trip group with 2 blank legs (the default starting state).
+  static TripGroup blank() => const TripGroup(
+        legs: [TripRow(), TripRow()],
+      );
 }
 
 class TaFormData {
@@ -153,9 +155,7 @@ class TaFormData {
   final String employeeId;
   final String month;
   final String year;
-  final List<TripRow> rows;
-  final double grandTravelTotal;
-  final double grandDaTotal;
+  final List<TripGroup> trips;
   final double grandTotal;
   final String status; // "draft" | "submitted"
 
@@ -164,9 +164,7 @@ class TaFormData {
     required this.employeeId,
     required this.month,
     required this.year,
-    required this.rows,
-    this.grandTravelTotal = 0,
-    this.grandDaTotal = 0,
+    required this.trips,
     this.grandTotal = 0,
     this.status = 'draft',
   });
@@ -176,11 +174,9 @@ class TaFormData {
         employeeId: json['employee_id'] ?? '',
         month: json['month'] ?? '',
         year: json['year'] ?? '',
-        rows: (json['rows'] as List<dynamic>? ?? [])
-            .map((r) => TripRow.fromJson(r as Map<String, dynamic>))
+        trips: (json['trips'] as List<dynamic>? ?? [])
+            .map((t) => TripGroup.fromJson(t as Map<String, dynamic>))
             .toList(),
-        grandTravelTotal: (json['grand_travel_total'] ?? 0).toDouble(),
-        grandDaTotal: (json['grand_da_total'] ?? 0).toDouble(),
         grandTotal: (json['grand_total'] ?? 0).toDouble(),
         status: json['status'] ?? 'draft',
       );
@@ -190,9 +186,7 @@ class TaFormData {
         'employee_id': employeeId,
         'month': month,
         'year': year,
-        'rows': rows.map((r) => r.toJson()).toList(),
-        'grand_travel_total': grandTravelTotal,
-        'grand_da_total': grandDaTotal,
+        'trips': trips.map((t) => t.toJson()).toList(),
         'grand_total': grandTotal,
         'status': status,
       };
