@@ -110,3 +110,4 @@ For Android 13+, also add:
 | Hive adapter not found | Run `build_runner build` |
 | PDF text misaligned | Tune X/Y in `lib/config/form_layout.dart` |
 | Contingent table overlaps TA table | Increase `contingentGapAfterTa` in `FormLayout` |
+| Crop screen doesn't open / build error on `image_cropper` | Ensure `android/app/build.gradle.kts` has `compileSdk >= 34` and `minSdk >= 21` (already set in this project) |
