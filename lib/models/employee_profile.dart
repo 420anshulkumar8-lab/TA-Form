@@ -35,6 +35,9 @@ class EmployeeProfile extends HiveObject {
   @HiveField(9)
   String department; // dropdown value, or the custom text if "Other"
 
+  @HiveField(10)
+  String photoPath; // local file path of the optional profile picture
+
   EmployeeProfile({
     this.name = '',
     this.designation = '',
@@ -46,6 +49,7 @@ class EmployeeProfile extends HiveObject {
     this.employeeNo = '',
     this.railway = '',
     this.department = '',
+    this.photoPath = '',
   });
 
   bool get isComplete =>
@@ -69,6 +73,7 @@ class EmployeeProfile extends HiveObject {
         'employee_no': employeeNo,
         'railway': railway,
         'department': department,
+        'photo_path': photoPath,
       };
 
   factory EmployeeProfile.fromJson(Map<String, dynamic> json) =>
@@ -85,5 +90,6 @@ class EmployeeProfile extends HiveObject {
         employeeNo: json['employee_no'] ?? '',
         railway: json['railway'] ?? '',
         department: json['department'] ?? '',
+        photoPath: json['photo_path'] ?? '',
       );
 }

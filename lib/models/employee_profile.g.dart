@@ -1,5 +1,5 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
-// Hand-authored to match the exact output of `hive_generator` for this
+// Hand-authored to match the exact output of hive_generator for this
 // class. If you change employee_profile.dart fields, regenerate via:
 //   flutter pub run build_runner build --delete-conflicting-outputs
 
@@ -30,13 +30,14 @@ class EmployeeProfileAdapter extends TypeAdapter<EmployeeProfile> {
       employeeNo: fields[7] as String,
       railway: fields[8] as String,
       department: fields[9] as String,
+      photoPath: fields[10] == null ? '' : fields[10] as String,
     );
   }
 
   @override
   void write(BinaryWriter writer, EmployeeProfile obj) {
     writer
-      ..writeByte(10)
+      ..writeByte(11)
       ..writeByte(0)
       ..write(obj.name)
       ..writeByte(1)
@@ -56,7 +57,9 @@ class EmployeeProfileAdapter extends TypeAdapter<EmployeeProfile> {
       ..writeByte(8)
       ..write(obj.railway)
       ..writeByte(9)
-      ..write(obj.department);
+      ..write(obj.department)
+      ..writeByte(10)
+      ..write(obj.photoPath);
   }
 
   @override
