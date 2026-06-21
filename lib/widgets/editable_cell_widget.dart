@@ -4,16 +4,50 @@
 // ta_form_screen.dart. Each cell shows its current value (or a placeholder)
 // and opens the appropriate picker/input when tapped — only when the table
 // is in editable mode.
+//
+// Cells that received an auto-suggested value (From/To/Date chained from a
+// previous leg) render in a lighter, dashed-border style until the user
+// taps and confirms/edits them — see `isSuggested`.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
-/// A plain rectangular tappable cell shell with a fixed width.
+/// Dashed border painter for "suggested, not yet confirmed" cells.
+class _DashedBorderPainter extends CustomPainter {
+  final Color color;
+  const _DashedBorderPainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1;
+    const dashWidth = 4.0;
+    const dashSpace = 3.0;
+
+    // bottom edge only — enough to signal "unconfirmed" without being noisy
+    double x = 0;
+    final y = size.height - 1;
+    while (x < size.width) {
+      canvas.drawLine(Offset(x, y), Offset(x + dashWidth, y), paint);
+      x += dashWidth + dashSpace;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedBorderPainter oldDelegate) =>
+      oldDelegate.color != color;
+}
+
+/// A plain rectangular tappable cell shell with a fixed width. When
+/// [isSuggested] is true, the cell renders with muted grey text and a
+/// dashed bottom border to signal "this is a guess — tap to confirm".
 class _CellShell extends StatelessWidget {
   final double width;
   final bool enabled;
+  final bool isSuggested;
   final VoidCallback? onTap;
   final Widget child;
 
@@ -22,6 +56,7 @@ class _CellShell extends StatelessWidget {
     required this.enabled,
     required this.onTap,
     required this.child,
+    this.isSuggested = false,
   });
 
   @override
@@ -40,11 +75,32 @@ class _CellShell extends StatelessWidget {
             ),
           ),
           alignment: Alignment.centerLeft,
-          child: child,
+          child: isSuggested
+              ? CustomPaint(
+                  painter: _DashedBorderPainter(
+                      theme.colorScheme.onSurface.withOpacity(0.35)),
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: child,
+                  ),
+                )
+              : child,
         ),
       ),
     );
   }
+}
+
+/// Text style helper — muted/grey when the value is an unconfirmed suggestion.
+TextStyle _valueStyle(BuildContext context, {required bool isSuggested, required bool isEmpty}) {
+  final theme = Theme.of(context);
+  if (isSuggested) {
+    return TextStyle(
+      color: theme.colorScheme.onSurface.withOpacity(0.45),
+      fontStyle: FontStyle.italic,
+    );
+  }
+  return TextStyle(color: isEmpty ? Colors.grey : null);
 }
 
 /// Free-text cell. Tapping opens a small dialog with a TextField.
@@ -53,6 +109,7 @@ class EditableTextCell extends StatelessWidget {
   final String value;
   final String label;
   final bool enabled;
+  final bool isSuggested;
   final ValueChanged<String> onChanged;
   final TextInputType? keyboardType;
 
@@ -63,6 +120,7 @@ class EditableTextCell extends StatelessWidget {
     required this.label,
     required this.enabled,
     required this.onChanged,
+    this.isSuggested = false,
     this.keyboardType,
   });
 
@@ -90,6 +148,8 @@ class EditableTextCell extends StatelessWidget {
         ],
       ),
     );
+    // Any explicit save (even re-confirming the same suggested text)
+    // counts as the user confirming the value.
     if (result != null) onChanged(result.trim());
   }
 
@@ -98,13 +158,13 @@ class EditableTextCell extends StatelessWidget {
     return _CellShell(
       width: width,
       enabled: enabled,
+      isSuggested: isSuggested && value.isNotEmpty,
       onTap: () => _edit(context),
       child: Text(
         value.isEmpty ? '—' : value,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: value.isEmpty ? Colors.grey : null,
-        ),
+        style: _valueStyle(context,
+            isSuggested: isSuggested && value.isNotEmpty, isEmpty: value.isEmpty),
       ),
     );
   }
@@ -117,6 +177,7 @@ class EditableDateCell extends StatelessWidget {
   final int month; // 1-12
   final int year;
   final bool enabled;
+  final bool isSuggested;
   final ValueChanged<String> onChanged;
 
   const EditableDateCell({
@@ -127,6 +188,7 @@ class EditableDateCell extends StatelessWidget {
     required this.year,
     required this.enabled,
     required this.onChanged,
+    this.isSuggested = false,
   });
 
   Future<void> _pick(BuildContext context) async {
@@ -160,10 +222,12 @@ class EditableDateCell extends StatelessWidget {
     return _CellShell(
       width: width,
       enabled: enabled,
+      isSuggested: isSuggested && value.isNotEmpty,
       onTap: () => _pick(context),
       child: Text(
         value.isEmpty ? '—' : value,
-        style: TextStyle(color: value.isEmpty ? Colors.grey : null),
+        style: _valueStyle(context,
+            isSuggested: isSuggested && value.isNotEmpty, isEmpty: value.isEmpty),
       ),
     );
   }

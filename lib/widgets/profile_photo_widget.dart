@@ -6,6 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
@@ -20,14 +21,37 @@ class ProfilePhotoWidget extends StatelessWidget {
     final picker = ImagePicker();
     final picked = await picker.pickImage(
       source: source,
-      imageQuality: 80,
-      maxWidth: 800,
+      imageQuality: 90,
+      maxWidth: 1200,
     );
     if (picked == null) return;
 
+    // WhatsApp-style crop step — square crop, before the photo is saved.
+    final cropped = await ImageCropper().cropImage(
+      sourcePath: picked.path,
+      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+      compressQuality: 85,
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: 'Adjust Photo',
+          toolbarColor: const Color(0xFF1565C0),
+          toolbarWidgetColor: Colors.white,
+          lockAspectRatio: true,
+          cropStyle: CropStyle.circle,
+          initAspectRatio: CropAspectRatioPreset.square,
+        ),
+        IOSUiSettings(
+          title: 'Adjust Photo',
+          aspectRatioLockEnabled: true,
+          cropStyle: CropStyle.circle,
+        ),
+      ],
+    );
+    if (cropped == null) return; // user cancelled the crop step
+
     final dir = await getApplicationDocumentsDirectory();
     final dest = File('${dir.path}/profile_photo.jpg');
-    await File(picked.path).copy(dest.path);
+    await File(cropped.path).copy(dest.path);
 
     if (context.mounted) {
       await context.read<AppProvider>().setProfilePhoto(dest.path);
