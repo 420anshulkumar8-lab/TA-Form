@@ -24,29 +24,24 @@ Future<void> main() async {
   // Init Hive
   await HiveService.init();
 
-  // Load saved preferences (from Claude_Original - good practice)
+  // Load saved theme preference
   final savedTheme = HiveService.isDarkMode;
-  final savedLanguage = HiveService.appLanguage;
 
-  runApp(RailwayTaApp(savedDark: savedTheme, savedLanguage: savedLanguage));
+  runApp(RailwayTaApp(savedDark: savedTheme));
 }
 
 class RailwayTaApp extends StatelessWidget {
   final bool savedDark;
-  final String savedLanguage;
 
   const RailwayTaApp({
     super.key,
     required this.savedDark,
-    required this.savedLanguage,
   });
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (_) => AppProvider()
-        ..setInitialTheme(savedDark)
-        ..setInitialLanguage(savedLanguage),
+      create: (_) => AppProvider()..setInitialTheme(savedDark),
       child: Consumer<AppProvider>(
         builder: (_, provider, __) => MaterialApp(
           title: 'Railway TA Form',
