@@ -4,11 +4,12 @@
 //
 //   Page 1 = assets/images/ga31_page1.png   (front of the form)
 //   Page 2 = assets/images/ga31_page2.png   (continuation table + certificates)
-//   Page 3+ = blank A4 page(s) for the Contingent Bill (if selected)
 //
 // Text is overlaid on the scanned form images at X,Y positions from
 // FormLayout. If a TA month has more entries than fit on page 1, the
-// remaining rows automatically continue onto page 2's table.
+// remaining rows automatically continue onto page 2's table. The Contingent
+// Bill (if present) is printed directly below the TA table's Grand Total,
+// on whichever scanned page that total ends up on.
 //
 // Developer note: tweak FormLayout constants after a test print to fine-tune
 // alignment against your physical form.
@@ -25,15 +26,6 @@ import '../models/trip_model.dart';
 import '../models/contingent_model.dart';
 import '../models/employee_profile.dart';
 import '../models/ta_session.dart';
-
-/// A single TA-table row paired with the formal "purpose" text of the trip
-/// it belongs to (the purpose is only printed once, on the last row of the
-/// trip — same behaviour as before).
-class _FlatRow {
-  final TripRow row;
-  final String purposeFormal;
-  const _FlatRow(this.row, this.purposeFormal);
-}
 
 /// Rupees + Paise split for printing into the form's two Rate sub-columns.
 class _Amount {
@@ -53,9 +45,8 @@ class PdfService {
     final bg1 = await _loadAsset('assets/images/ga31_page1.png');
     final bg2 = await _loadAsset('assets/images/ga31_page2.png');
 
-    final hasTa = session.selectTa && session.formDataTa != null;
-    final hasContingent =
-        session.selectContingent && session.formDataContingent != null;
+    final hasTa = session.formDataTa != null;
+    final hasContingent = session.formDataContingent != null;
 
     TaFormData? taData;
     ContingentFormData? contingentData;
@@ -65,29 +56,52 @@ class PdfService {
       contingentData = ContingentFormData.fromJson(session.formDataContingent!);
     }
 
-    // ── Flatten all TA rows (across trips) into one ordered list ───────────
-    final flatRows = <_FlatRow>[];
-    if (taData != null) {
-      for (final trip in taData.trips) {
-        for (final row in trip.rows) {
-          flatRows.add(_FlatRow(row, trip.purposeFormal));
-        }
-      }
-    }
+    final taRows = taData?.rows ?? <TripRow>[];
 
-    // ── Decide row height / font size for the WHOLE table, then split rows
-    //    between page 1 and page 2 based on how many fit on page 1. ────────
-    final rowHeight = FormLayout.rowHeightForCount(flatRows.length);
-    final fontSize = FormLayout.fontSizeForRows(flatRows.length);
+    // ── Decide row height / font size for the WHOLE TA table, then split
+    //    rows between page 1 and page 2 based on how many fit on page 1. ───
+    final rowHeight = FormLayout.rowHeightForCount(taRows.length);
+    final fontSize = FormLayout.fontSizeForRows(taRows.length);
     final page1Cap = FormLayout.page1Capacity(rowHeight);
 
-    final page1Rows = flatRows.length <= page1Cap
-        ? flatRows
-        : flatRows.sublist(0, page1Cap);
+    final page1Rows =
+        taRows.length <= page1Cap ? taRows : taRows.sublist(0, page1Cap);
     final page2Rows =
-        flatRows.length <= page1Cap ? <_FlatRow>[] : flatRows.sublist(page1Cap);
+        taRows.length <= page1Cap ? <TripRow>[] : taRows.sublist(page1Cap);
 
-    final totalPrintsOnPage2 = page2Rows.isNotEmpty;
+    final taEndsOnPage2 = page2Rows.isNotEmpty;
+
+    // ── Where does the TA table (incl. Grand Total) end? Used as the start
+    //    Y for the Contingent block on that same page. ──────────────────────
+    final taEndY = taEndsOnPage2
+        ? FormLayout.firstRowY2 + page2Rows.length * rowHeight + 4
+        : FormLayout.firstRowY + page1Rows.length * rowHeight + 4;
+
+    // ── Contingent sizing ──────────────────────────────────────────────────
+    final contingentEntries = contingentData?.entries ?? <ContingentEntry>[];
+    final contingentRowHeight =
+        FormLayout.contingentRowHeightForCount(contingentEntries.length);
+    final contingentFontSize =
+        FormLayout.contingentFontSizeForRows(contingentEntries.length);
+    final contingentStartY = taEndY + FormLayout.contingentGapAfterTa;
+    final contingentBottomLimit = taEndsOnPage2
+        ? FormLayout.contingentBottomY2
+        : FormLayout.contingentBottomY1;
+    // If the contingent block doesn't fit in the remaining space on the page
+    // the TA table ended on, push the whole block onto page 2 instead
+    // (starting fresh under page 2's table area) so nothing overlaps.
+    final contingentFitsAfterTa = !taEndsOnPage2 &&
+        (contingentStartY +
+                contingentEntries.length * contingentRowHeight +
+                20) <=
+            contingentBottomLimit;
+    final contingentOnPage1 = !taEndsOnPage2 && contingentFitsAfterTa;
+    final contingentOnPage2WithTa = taEndsOnPage2;
+    final contingentStartYFinal = contingentOnPage1
+        ? contingentStartY
+        : (contingentOnPage2WithTa
+            ? contingentStartY
+            : FormLayout.firstRowY2); // own space on page 2 if TA was page-1-only
 
     // ── PAGE 1 — front of GA-31 ──────────────────────────────────────────────
     pdf.addPage(
@@ -105,12 +119,11 @@ class PdfService {
               ),
             ..._headerOverlay(profile, session),
             ..._tableRows(page1Rows, rowHeight, fontSize, FormLayout.firstRowY),
-            if (!totalPrintsOnPage2 && taData != null)
-              ..._totalOverlay(
-                taData,
-                FormLayout.firstRowY + page1Rows.length * rowHeight + 4,
-                fontSize,
-              ),
+            if (!taEndsOnPage2 && taData != null)
+              ..._totalOverlay(taData, taEndY, fontSize),
+            if (contingentOnPage1 && contingentData != null)
+              ..._contingentOverlay(contingentData, contingentStartYFinal,
+                  contingentRowHeight, contingentFontSize),
           ],
         ),
       ),
@@ -131,12 +144,11 @@ class PdfService {
                 child: pw.Image(pw.MemoryImage(bg2), fit: pw.BoxFit.fill),
               ),
             ..._tableRows(page2Rows, rowHeight, fontSize, FormLayout.firstRowY2),
-            if (totalPrintsOnPage2 && taData != null)
-              ..._totalOverlay(
-                taData,
-                FormLayout.firstRowY2 + page2Rows.length * rowHeight + 4,
-                fontSize,
-              ),
+            if (taEndsOnPage2 && taData != null)
+              ..._totalOverlay(taData, taEndY, fontSize),
+            if (!contingentOnPage1 && contingentData != null)
+              ..._contingentOverlay(contingentData, contingentStartYFinal,
+                  contingentRowHeight, contingentFontSize),
             // "मैं प्रमाणित करता हूँ कि श्री ____" — officer's name
             _overlayText(
               profile.name,
@@ -149,31 +161,10 @@ class PdfService {
       ),
     );
 
-    // ── PAGE 3+ — Contingent Bill (own form, no scanned background) ──────────
-    if (contingentData != null) {
-      pdf.addPage(
-        pw.Page(
-          pageFormat: PdfPageFormat.a4,
-          build: (context) => pw.Stack(
-            children: [
-              _overlayText(
-                'Contingent Bill — ${_capitalize(session.month)} ${session.year}',
-                45,
-                FormLayout.contingentTitleY,
-                12,
-                bold: true,
-              ),
-              ..._buildContingentRows(contingentData!),
-            ],
-          ),
-        ),
-      );
-    }
-
     // ── Save to app documents directory ───────────────────────────────────
     final dir = await getApplicationDocumentsDirectory();
     final fileName =
-        'TA_${session.month}_${session.year}_${profile.employeeId}.pdf';
+        'TA_${session.month}_${session.year}_${profile.employeeNo}.pdf';
     final file = File('${dir.path}/$fileName');
     await file.writeAsBytes(await pdf.save());
     return file.path;
@@ -188,14 +179,11 @@ class PdfService {
 
     return [
       // शाखा/Branch ... मंडल/जिला/Division/District ... सदर मुकाम/Headquarters
-      // NOTE: EmployeeProfile only has a single `division` field, so it is
-      // printed in both Branch and Division/District. Add a dedicated
-      // `branch` field to EmployeeProfile later if these should differ.
-      _overlayText(profile.division, FormLayout.branchX,
+      _overlayText(profile.department, FormLayout.branchX,
           FormLayout.branchDivisionHqY, FormLayout.fontSizeNormal),
       _overlayText(profile.division, FormLayout.divisionX,
           FormLayout.branchDivisionHqY, FormLayout.fontSizeNormal),
-      _overlayText(profile.headquarters, FormLayout.headquartersX,
+      _overlayText(profile.headquarter, FormLayout.headquartersX,
           FormLayout.branchDivisionHqY, FormLayout.fontSizeNormal),
 
       // ...performed by Shri ____ for which allowance ____ 20__ is claimed
@@ -222,7 +210,7 @@ class PdfService {
 
   // ── TA table rows (used for both page 1 & page 2) ─────────────────────────
   static List<pw.Widget> _tableRows(
-    List<_FlatRow> rows,
+    List<TripRow> rows,
     double rowHeight,
     double fontSize,
     double startY,
@@ -230,9 +218,7 @@ class PdfService {
     final widgets = <pw.Widget>[];
     double y = startY;
 
-    for (final flat in rows) {
-      final row = flat.row;
-
+    for (final row in rows) {
       if (row.rowType == RowType.stay) {
         // ── Stay/halt row: merged across columns 2-7 ──────────────────────
         final stayText =
@@ -258,10 +244,9 @@ class PdfService {
             FormLayout.kmX, y, fontSize));
         widgets.add(_overlayText(row.dayNight, FormLayout.dayNightX, y, fontSize));
 
-        // Purpose ("Object of Journey") printed once, on the last row of trip
-        if (row.isLastRowOfTrip && flat.purposeFormal.isNotEmpty) {
-          widgets.add(_overlayTextBox(flat.purposeFormal, FormLayout.purposeX,
-              y, fontSize, width: FormLayout.purposeWidth));
+        if (row.purpose.isNotEmpty) {
+          widgets.add(_overlayTextBox(row.purpose, FormLayout.purposeX, y,
+              fontSize, width: FormLayout.purposeWidth));
         }
 
         final amt = _splitAmount(row.rateAmount);
@@ -287,35 +272,46 @@ class PdfService {
     ];
   }
 
-  // ── Contingent bill rows (own blank page) ─────────────────────────────────
-  static List<pw.Widget> _buildContingentRows(
-      ContingentFormData contingentData) {
+  // ── Contingent bill rows — printed directly under the TA table on the
+  //    same scanned page (no separate blank page). Row height/font size
+  //    compact automatically as entry count grows. ──────────────────────────
+  static List<pw.Widget> _contingentOverlay(
+    ContingentFormData contingentData,
+    double startY,
+    double rowHeight,
+    double fontSize,
+  ) {
     final widgets = <pw.Widget>[];
-    double currentY = FormLayout.contingentStartY;
-    const fontSize = FormLayout.fontSizeNormal;
-    const rowHeight = FormLayout.rowHeightMid;
+    double y = startY;
+
+    widgets.add(_overlayText(
+      'Contingent Bill',
+      FormLayout.contingentDateX,
+      y,
+      fontSize + 1,
+      bold: true,
+    ));
+    y += rowHeight;
 
     for (final entry in contingentData.entries) {
       widgets.add(_overlayText(
-          entry.date, FormLayout.contingentDateX, currentY, fontSize));
+          entry.date, FormLayout.contingentDateX, y, fontSize));
       widgets.add(_overlayText(
-          entry.by, FormLayout.contingentByX, currentY, fontSize));
+          entry.fromLocation, FormLayout.contingentFromX, y, fontSize));
       widgets.add(_overlayText(
-          entry.fromLocation, FormLayout.contingentFromX, currentY, fontSize));
-      widgets.add(_overlayText(
-          entry.toLocation, FormLayout.contingentToX, currentY, fontSize));
+          entry.toLocation, FormLayout.contingentToX, y, fontSize));
       widgets.add(_overlayText(
           entry.distanceKm == 0 ? '' : entry.distanceKm.toStringAsFixed(0),
-          FormLayout.contingentKmX, currentY, fontSize));
+          FormLayout.contingentKmX, y, fontSize));
       widgets.add(_overlayText('Rs. ${entry.amount.toStringAsFixed(0)}',
-          FormLayout.contingentAmountX, currentY, fontSize));
-      currentY += rowHeight;
+          FormLayout.contingentAmountX, y, fontSize));
+      y += rowHeight;
     }
 
     widgets.add(_overlayText(
       'Total: Rs. ${contingentData.totalAmount.toStringAsFixed(0)}',
       FormLayout.contingentAmountX,
-      currentY + 4,
+      y + 2,
       fontSize,
       bold: true,
     ));

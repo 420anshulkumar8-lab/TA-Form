@@ -33,29 +33,11 @@ class HiveService {
 
   static Box get _settings => Hive.box(_settingsBox);
 
-  static String get appLanguage =>
-      _settings.get('app_language', defaultValue: 'English') as String;
-
-  static Future<void> setAppLanguage(String language) =>
-      _settings.put('app_language', language);
-
   static bool get isDarkMode =>
       _settings.get('theme_mode', defaultValue: false) as bool;
 
   static Future<void> setDarkMode(bool value) =>
       _settings.put('theme_mode', value);
-
-  static String? get cachedApiKey =>
-      _settings.get('cached_api_key') as String?;
-
-  static Future<void> setCachedApiKey(String key) =>
-      _settings.put('cached_api_key', key);
-
-  static String? get cachedModel =>
-      _settings.get('cached_model') as String?;
-
-  static Future<void> setCachedModel(String model) =>
-      _settings.put('cached_model', model);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // EMPLOYEE PROFILE
