@@ -43,8 +43,12 @@ class AppProvider extends ChangeNotifier {
   }
 
   Future<void> saveProfile(EmployeeProfile profile) async {
-    _profile = profile;
     await HiveService.saveProfile(profile);
+    // Re-read from Hive (rather than trusting the in-memory `profile` we
+    // were handed) so every listener instantly sees exactly what's now
+    // persisted — this is what makes the change visible immediately on
+    // Home/Drawer/etc. without needing an app restart.
+    _profile = HiveService.getProfile();
     notifyListeners();
   }
 
@@ -54,14 +58,18 @@ class AppProvider extends ChangeNotifier {
   }
 
   Future<void> setProfilePhoto(String path) async {
-    _profile.photoPath = path;
-    await HiveService.saveProfile(_profile);
+    final updated = HiveService.getProfile();
+    updated.photoPath = path;
+    await HiveService.saveProfile(updated);
+    _profile = HiveService.getProfile();
     notifyListeners();
   }
 
   Future<void> removeProfilePhoto() async {
-    _profile.photoPath = '';
-    await HiveService.saveProfile(_profile);
+    final updated = HiveService.getProfile();
+    updated.photoPath = '';
+    await HiveService.saveProfile(updated);
+    _profile = HiveService.getProfile();
     notifyListeners();
   }
 
