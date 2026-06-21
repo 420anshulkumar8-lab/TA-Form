@@ -1,14 +1,14 @@
 // lib/screens/ta_form_screen.dart
 // ─────────────────────────────────────────────────────────────────────────────
-// Single screen for filling / viewing a month's TA form. Shows a real-form
-// style scrollable table for the TA rows, with an optional Contingent table
-// below it (added via "+ Add Contingent"). Rows are added/removed manually
-// with (+) and a red delete icon — there is no AI involved.
+// Single screen for filling / viewing a month's TA form. The TA section is
+// organized into Trips ("Trip 1", "Trip 2", ...) — each trip is one
+// headquarters-out-and-back journey, made of one or more legs (rows), all
+// sharing a single merged Purpose cell. An optional Contingent table can be
+// added below.
 //
 // Modes:
-//   - Editable (status == fresh/draft): cells are tappable, rows can be
-//     added/removed, bottom buttons show "Edit" (no-op, already editable)
-//     and "Final".
+//   - Editable (status == fresh/draft): cells are tappable, legs/trips can
+//     be added/removed, bottom buttons show "Edit" and "Final".
 //   - Read-only (status == submitted): cells are not tappable, "Generate
 //     PDF" button is shown instead.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -24,6 +24,7 @@ import '../services/hive_service.dart';
 import '../services/pdf_service.dart';
 import '../services/ta_calculation_service.dart';
 import '../widgets/editable_cell_widget.dart';
+import '../widgets/merged_purpose_cell_widget.dart';
 import '../widgets/status_badge_widget.dart';
 import 'pdf_preview_screen.dart';
 
@@ -37,7 +38,7 @@ class TaFormScreen extends StatefulWidget {
 }
 
 class _TaFormScreenState extends State<TaFormScreen> {
-  late List<TripRow> _taRows;
+  late List<TripGroup> _trips;
   late List<ContingentEntry> _contingentEntries;
   bool _showContingent = false;
   bool _isEditing = true;
@@ -52,11 +53,11 @@ class _TaFormScreenState extends State<TaFormScreen> {
     final isSubmitted = widget.session.status == SessionStatus.submitted;
     _isEditing = !isSubmitted;
 
-    _taRows = widget.session.formDataTa != null
-        ? TaFormData.fromJson(widget.session.formDataTa!).rows
+    _trips = widget.session.formDataTa != null
+        ? TaFormData.fromJson(widget.session.formDataTa!).trips
         : [];
-    if (_taRows.isEmpty) {
-      _taRows = [const TripRow(rowType: RowType.travel)];
+    if (_trips.isEmpty) {
+      _trips = [TripGroup.blank()];
     }
 
     _contingentEntries = widget.session.formDataContingent != null
@@ -69,36 +70,65 @@ class _TaFormScreenState extends State<TaFormScreen> {
     }
   }
 
-  // ── Auto-calc amount whenever a travel row's times/level change ──────────
   EmployeeProfile get _profile => context.read<AppProvider>().profile;
 
-  TripRow _withRecalculatedAmount(TripRow row) {
-    if (row.rowType != RowType.travel) return row;
+  TripRow _withRecalculatedAmount(TripRow leg) {
     final amount = TaCalculationService.amountForRow(
       level: _profile.level,
-      departureTime: row.departureTime,
-      arrivalTime: row.arrivalTime,
+      departureTime: leg.departureTime,
+      arrivalTime: leg.arrivalTime,
     );
-    return row.copyWith(rateAmount: amount);
+    return leg.copyWith(rateAmount: amount);
   }
 
-  // ── TA row mutation helpers ───────────────────────────────────────────────
-  void _updateTaRow(int index, TripRow Function(TripRow) update) {
+  // ── Trip mutation helpers ─────────────────────────────────────────────
+  void _updateLeg(int tripIndex, int legIndex, TripRow Function(TripRow) update) {
     setState(() {
-      final updated = update(_taRows[index]);
-      _taRows[index] = _withRecalculatedAmount(updated);
+      final trip = _trips[tripIndex];
+      final legs = List<TripRow>.from(trip.legs);
+      legs[legIndex] = _withRecalculatedAmount(update(legs[legIndex]));
+      // Re-chain any still-suggested From/To in later legs of this trip.
+      final rechained = TaCalculationService.recalculateChain(legs);
+      _trips[tripIndex] = trip.copyWith(legs: rechained);
     });
     _saveDraft();
   }
 
-  void _addTaRow() {
-    setState(() => _taRows.add(const TripRow(rowType: RowType.travel)));
+  void _updateTripPurpose(int tripIndex, String purpose) {
+    setState(() {
+      _trips[tripIndex] = _trips[tripIndex].copyWith(purpose: purpose);
+    });
     _saveDraft();
   }
 
-  void _removeTaRow(int index) {
-    if (_taRows.length <= 1) return;
-    setState(() => _taRows.removeAt(index));
+  void _addLeg(int tripIndex) {
+    setState(() {
+      final trip = _trips[tripIndex];
+      final suggested = TaCalculationService.buildSuggestedLeg(trip.legs);
+      _trips[tripIndex] =
+          trip.copyWith(legs: [...trip.legs, _withRecalculatedAmount(suggested)]);
+    });
+    _saveDraft();
+  }
+
+  void _removeLeg(int tripIndex, int legIndex) {
+    final trip = _trips[tripIndex];
+    if (trip.legs.length <= 1) return;
+    setState(() {
+      final legs = List<TripRow>.from(trip.legs)..removeAt(legIndex);
+      _trips[tripIndex] = trip.copyWith(legs: TaCalculationService.recalculateChain(legs));
+    });
+    _saveDraft();
+  }
+
+  void _addTrip() {
+    setState(() => _trips.add(TripGroup.blank()));
+    _saveDraft();
+  }
+
+  void _removeTrip(int tripIndex) {
+    if (_trips.length <= 1) return;
+    setState(() => _trips.removeAt(tripIndex));
     _saveDraft();
   }
 
@@ -139,16 +169,13 @@ class _TaFormScreenState extends State<TaFormScreen> {
   }
 
   // ── Totals ─────────────────────────────────────────────────────────────
-  double get _grandTravelTotal => TaCalculationService.tripTravelTotal(_taRows);
-  double get _grandDaTotal => TaCalculationService.tripDaTotal(_taRows);
-  double get _grandTaTotal => _grandTravelTotal + _grandDaTotal;
+  double get _grandTaTotal => TaCalculationService.grandTaTotal(_trips);
   double get _grandContingentTotal =>
       TaCalculationService.grandContingentTotal(_contingentEntries);
 
-  bool get _hasTaData => _taRows.any((r) =>
-      r.rowType == RowType.travel
-          ? (r.date.isNotEmpty || r.fromLocation.isNotEmpty || r.toLocation.isNotEmpty)
-          : (r.dateFrom.isNotEmpty || r.location.isNotEmpty));
+  bool get _hasTaData => _trips.any((t) =>
+      t.purpose.isNotEmpty ||
+      t.legs.any((l) => l.fromLocation.isNotEmpty || l.toLocation.isNotEmpty));
 
   bool get _hasContingentData =>
       _showContingent && _contingentEntries.any((e) => e.date.isNotEmpty || e.amount > 0);
@@ -165,9 +192,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
             employeeId: profile.employeeNo,
             month: widget.session.month,
             year: widget.session.year,
-            rows: _taRows,
-            grandTravelTotal: _grandTravelTotal,
-            grandDaTotal: _grandDaTotal,
+            trips: _trips,
             grandTotal: _grandTaTotal,
             status: 'draft',
           ).toJson()
@@ -235,9 +260,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
             employeeId: profile.employeeNo,
             month: widget.session.month,
             year: widget.session.year,
-            rows: _taRows,
-            grandTravelTotal: _grandTravelTotal,
-            grandDaTotal: _grandDaTotal,
+            trips: _trips,
             grandTotal: _grandTaTotal,
             status: 'submitted',
           ).toJson()
@@ -302,11 +325,6 @@ class _TaFormScreenState extends State<TaFormScreen> {
     }
   }
 
-  // Note: no save-on-dispose here anymore. Every row/field edit already
-  // calls _saveDraft() the moment it happens (see mutation helpers above),
-  // so the draft is always persisted to Hive before the user can navigate
-  // away — dispose() runs too late/unreliably for async writes to finish.
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -335,8 +353,27 @@ class _TaFormScreenState extends State<TaFormScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  _buildTaTable(),
-                  const SizedBox(height: 12),
+
+                  for (int t = 0; t < _trips.length; t++)
+                    _buildTripBlock(t),
+
+                  if (_isEditing)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      child: OutlinedButton.icon(
+                        onPressed: _addTrip,
+                        icon: const Icon(Icons.add_road),
+                        label: const Text('Add Trip'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF1565C0),
+                          side: const BorderSide(color: Color(0xFF1565C0), width: 1.4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 18, vertical: 12),
+                        ),
+                      ),
+                    ),
+
+                  const SizedBox(height: 4),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: Text(
@@ -402,17 +439,79 @@ class _TaFormScreenState extends State<TaFormScreen> {
     );
   }
 
-  // ── TA TABLE ───────────────────────────────────────────────────────────
-  Widget _buildTaTable() {
+  // ── TRIP BLOCK (header + its legs table) ──────────────────────────────
+  Widget _buildTripBlock(int tripIndex) {
+    final trip = _trips[tripIndex];
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Trip header — visually distinct banner ──────────────────────
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                  color: theme.colorScheme.primary.withOpacity(0.3), width: 1.2),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.alt_route, size: 18, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Trip ${tripIndex + 1}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                const Spacer(),
+                if (_isEditing && _trips.length > 1)
+                  GestureDetector(
+                    onTap: () => _removeTrip(tripIndex),
+                    child: const Icon(Icons.cancel, color: Colors.red, size: 20),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          _buildTripTable(tripIndex, trip),
+          if (_isEditing)
+            Padding(
+              padding: const EdgeInsets.only(left: 12, top: 6),
+              child: TextButton.icon(
+                onPressed: () => _addLeg(tripIndex),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Add Row'),
+                style: TextButton.styleFrom(
+                  foregroundColor: theme.colorScheme.onSurface.withOpacity(0.7),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ── TRIP TABLE — one trip's legs, with a merged Purpose column ───────────
+  Widget _buildTripTable(int tripIndex, TripGroup trip) {
     const colDate = 100.0;
     const colVehicle = 110.0;
     const colTime = 80.0;
     const colLoc = 110.0;
     const colKm = 70.0;
     const colDayNight = 80.0;
-    const colPurpose = 140.0;
+    const colPurpose = 130.0;
     const colAmount = 90.0;
     const colAction = 48.0;
+    const rowHeight = 58.0; // fixed visual row height for the merged-cell math
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -433,38 +532,62 @@ class _TaFormScreenState extends State<TaFormScreen> {
             _HeaderCell('Amount', colAmount),
             if (_isEditing) _HeaderCell('', colAction),
           ]),
-          for (int i = 0; i < _taRows.length; i++)
-            _buildTaRow(i, colDate, colVehicle, colTime, colLoc, colKm,
-                colDayNight, colPurpose, colAmount, colAction),
-          if (_isEditing)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Center(
-                child: IconButton.filled(
-                  icon: const Icon(Icons.add),
-                  tooltip: 'Add Row',
-                  onPressed: _addTaRow,
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Legs column-stack (everything except Purpose) ─────────
+                Column(
+                  children: [
+                    for (int i = 0; i < trip.legs.length; i++)
+                      SizedBox(
+                        height: rowHeight,
+                        child: _buildLegRow(
+                          tripIndex,
+                          i,
+                          trip.legs[i],
+                          colDate,
+                          colVehicle,
+                          colTime,
+                          colLoc,
+                          colKm,
+                          colDayNight,
+                          colAmount,
+                          colAction,
+                        ),
+                      ),
+                  ],
                 ),
-              ),
+                // ── Merged Purpose cell spanning all legs of this trip ────
+                MergedPurposeCellWidget(
+                  width: colPurpose,
+                  rowHeight: rowHeight,
+                  legCount: trip.legs.length,
+                  purpose: trip.purpose,
+                  enabled: _isEditing,
+                  onChanged: (v) => _updateTripPurpose(tripIndex, v),
+                ),
+              ],
             ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildTaRow(
-    int i,
+  Widget _buildLegRow(
+    int tripIndex,
+    int legIndex,
+    TripRow leg,
     double colDate,
     double colVehicle,
     double colTime,
     double colLoc,
     double colKm,
     double colDayNight,
-    double colPurpose,
     double colAmount,
     double colAction,
   ) {
-    final row = _taRows[i];
     final theme = Theme.of(context);
 
     return Container(
@@ -477,19 +600,22 @@ class _TaFormScreenState extends State<TaFormScreen> {
         children: [
           EditableDateCell(
             width: colDate,
-            value: row.date,
+            value: leg.date,
             month: _monthNum,
             year: _yearNum,
             enabled: _isEditing,
-            onChanged: (v) => _updateTaRow(i, (r) => r.copyWith(date: v)),
+            isSuggested: leg.dateIsSuggested,
+            onChanged: (v) => _updateLeg(tripIndex, legIndex,
+                (r) => r.copyWith(date: v, dateIsSuggested: false)),
           ),
           EditableVehicleCell(
             width: colVehicle,
-            value: row.vehicleNumber,
-            isTrainType: row.vehicleEntryType == VehicleEntryType.train,
+            value: leg.vehicleNumber,
+            isTrainType: leg.vehicleEntryType == VehicleEntryType.train,
             enabled: _isEditing,
-            onChanged: (v, isTrain) => _updateTaRow(
-                i,
+            onChanged: (v, isTrain) => _updateLeg(
+                tripIndex,
+                legIndex,
                 (r) => r.copyWith(
                       vehicleNumber: v,
                       vehicleEntryType:
@@ -498,57 +624,55 @@ class _TaFormScreenState extends State<TaFormScreen> {
           ),
           EditableTimeCell(
             width: colTime,
-            value: row.departureTime,
+            value: leg.departureTime,
             enabled: _isEditing,
             onChanged: (v) =>
-                _updateTaRow(i, (r) => r.copyWith(departureTime: v)),
+                _updateLeg(tripIndex, legIndex, (r) => r.copyWith(departureTime: v)),
           ),
           EditableTimeCell(
             width: colTime,
-            value: row.arrivalTime,
-            enabled: _isEditing,
-            onChanged: (v) => _updateTaRow(i, (r) => r.copyWith(arrivalTime: v)),
-          ),
-          EditableTextCell(
-            width: colLoc,
-            value: row.fromLocation,
-            label: 'From',
+            value: leg.arrivalTime,
             enabled: _isEditing,
             onChanged: (v) =>
-                _updateTaRow(i, (r) => r.copyWith(fromLocation: v)),
+                _updateLeg(tripIndex, legIndex, (r) => r.copyWith(arrivalTime: v)),
           ),
           EditableTextCell(
             width: colLoc,
-            value: row.toLocation,
+            value: leg.fromLocation,
+            label: 'From',
+            enabled: _isEditing,
+            isSuggested: leg.fromIsSuggested,
+            onChanged: (v) => _updateLeg(tripIndex, legIndex,
+                (r) => r.copyWith(fromLocation: v, fromIsSuggested: false)),
+          ),
+          EditableTextCell(
+            width: colLoc,
+            value: leg.toLocation,
             label: 'To',
             enabled: _isEditing,
-            onChanged: (v) => _updateTaRow(i, (r) => r.copyWith(toLocation: v)),
+            isSuggested: leg.toIsSuggested,
+            onChanged: (v) => _updateLeg(tripIndex, legIndex,
+                (r) => r.copyWith(toLocation: v, toIsSuggested: false)),
           ),
           EditableTextCell(
             width: colKm,
-            value: row.distanceKm == 0 ? '' : row.distanceKm.toStringAsFixed(0),
+            value: leg.distanceKm == 0 ? '' : leg.distanceKm.toStringAsFixed(0),
             label: 'Kilometre',
             enabled: _isEditing,
             keyboardType: TextInputType.number,
-            onChanged: (v) => _updateTaRow(
-                i, (r) => r.copyWith(distanceKm: double.tryParse(v) ?? 0)),
+            onChanged: (v) => _updateLeg(tripIndex, legIndex,
+                (r) => r.copyWith(distanceKm: double.tryParse(v) ?? 0)),
           ),
           EditableDayNightCell(
             width: colDayNight,
-            value: row.dayNight,
+            value: leg.dayNight,
             enabled: _isEditing,
-            onChanged: (v) => _updateTaRow(i, (r) => r.copyWith(dayNight: v)),
-          ),
-          EditableTextCell(
-            width: colPurpose,
-            value: row.purpose,
-            label: 'Purpose',
-            enabled: _isEditing,
-            onChanged: (v) => _updateTaRow(i, (r) => r.copyWith(purpose: v)),
+            onChanged: (v) =>
+                _updateLeg(tripIndex, legIndex, (r) => r.copyWith(dayNight: v)),
           ),
           ReadOnlyCell(
             width: colAmount,
-            value: row.rateAmount == 0 ? '—' : row.rateAmount.toStringAsFixed(2),
+            value: leg.rateAmount == 0 ? '—' : leg.rateAmount.toStringAsFixed(2),
             bold: true,
           ),
           if (_isEditing)
@@ -556,7 +680,9 @@ class _TaFormScreenState extends State<TaFormScreen> {
               width: colAction,
               child: IconButton(
                 icon: const Icon(Icons.cancel, color: Colors.red, size: 20),
-                onPressed: _taRows.length > 1 ? () => _removeTaRow(i) : null,
+                onPressed: _trips[tripIndex].legs.length > 1
+                    ? () => _removeLeg(tripIndex, legIndex)
+                    : null,
               ),
             ),
         ],
