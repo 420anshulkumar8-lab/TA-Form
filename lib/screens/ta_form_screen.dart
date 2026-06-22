@@ -373,16 +373,9 @@ class _TaFormScreenState extends State<TaFormScreen> {
                       ),
                     ),
 
-                  const SizedBox(height: 4),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Text(
-                      'TA Total: Rs. ${_grandTaTotal.toStringAsFixed(2)}',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 32),
+                  const Divider(indent: 12, endIndent: 12),
+                  const SizedBox(height: 16),
 
                   if (_showContingent) ...[
                     Padding(
@@ -417,7 +410,6 @@ class _TaFormScreenState extends State<TaFormScreen> {
                   ],
 
                   if (_isEditing && !_showContingent) ...[
-                    const SizedBox(height: 8),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: OutlinedButton.icon(
@@ -510,8 +502,8 @@ class _TaFormScreenState extends State<TaFormScreen> {
     const colDayNight = 80.0;
     const colPurpose = 130.0;
     const colAmount = 90.0;
-    const colAction = 48.0;
-    const rowHeight = 58.0; // fixed visual row height for the merged-cell math
+    const colAction = 40.0;
+    const rowHeight = 58.0;
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -519,6 +511,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Header row ──────────────────────────────────────────────────
           _tableHeaderRow([
             _HeaderCell('Date', colDate),
             _HeaderCell('Train/Veh No.', colVehicle),
@@ -532,33 +525,26 @@ class _TaFormScreenState extends State<TaFormScreen> {
             _HeaderCell('Amount', colAmount),
             if (_isEditing) _HeaderCell('', colAction),
           ]),
+          // ── Data rows — Purpose spans vertically, Amount+Action per leg ─
           IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── Legs column-stack (everything except Purpose) ─────────
+                // Left side: Date → DayNight (per-leg cells)
                 Column(
                   children: [
                     for (int i = 0; i < trip.legs.length; i++)
                       SizedBox(
                         height: rowHeight,
-                        child: _buildLegRow(
-                          tripIndex,
-                          i,
-                          trip.legs[i],
-                          colDate,
-                          colVehicle,
-                          colTime,
-                          colLoc,
-                          colKm,
-                          colDayNight,
-                          colAmount,
-                          colAction,
+                        child: _buildLegRowLeft(
+                          tripIndex, i, trip.legs[i],
+                          colDate, colVehicle, colTime,
+                          colLoc, colKm, colDayNight,
                         ),
                       ),
                   ],
                 ),
-                // ── Merged Purpose cell spanning all legs of this trip ────
+                // Middle: Purpose merged cell spanning all legs
                 MergedPurposeCellWidget(
                   width: colPurpose,
                   rowHeight: rowHeight,
@@ -566,6 +552,19 @@ class _TaFormScreenState extends State<TaFormScreen> {
                   purpose: trip.purpose,
                   enabled: _isEditing,
                   onChanged: (v) => _updateTripPurpose(tripIndex, v),
+                ),
+                // Right side: Amount + Action (per-leg cells)
+                Column(
+                  children: [
+                    for (int i = 0; i < trip.legs.length; i++)
+                      SizedBox(
+                        height: rowHeight,
+                        child: _buildLegRowRight(
+                          tripIndex, i, trip.legs[i],
+                          colAmount, colAction,
+                        ),
+                      ),
+                  ],
                 ),
               ],
             ),
@@ -575,7 +574,8 @@ class _TaFormScreenState extends State<TaFormScreen> {
     );
   }
 
-  Widget _buildLegRow(
+  // ── Left part of a leg row: Date → DayNight ──────────────────────────────
+  Widget _buildLegRowLeft(
     int tripIndex,
     int legIndex,
     TripRow leg,
@@ -585,11 +585,8 @@ class _TaFormScreenState extends State<TaFormScreen> {
     double colLoc,
     double colKm,
     double colDayNight,
-    double colAmount,
-    double colAction,
   ) {
     final theme = Theme.of(context);
-
     return Container(
       decoration: BoxDecoration(
         border: Border(
@@ -614,27 +611,27 @@ class _TaFormScreenState extends State<TaFormScreen> {
             isTrainType: leg.vehicleEntryType == VehicleEntryType.train,
             enabled: _isEditing,
             onChanged: (v, isTrain) => _updateLeg(
-                tripIndex,
-                legIndex,
+                tripIndex, legIndex,
                 (r) => r.copyWith(
                       vehicleNumber: v,
-                      vehicleEntryType:
-                          isTrain ? VehicleEntryType.train : VehicleEntryType.other,
+                      vehicleEntryType: isTrain
+                          ? VehicleEntryType.train
+                          : VehicleEntryType.other,
                     )),
           ),
           EditableTimeCell(
             width: colTime,
             value: leg.departureTime,
             enabled: _isEditing,
-            onChanged: (v) =>
-                _updateLeg(tripIndex, legIndex, (r) => r.copyWith(departureTime: v)),
+            onChanged: (v) => _updateLeg(
+                tripIndex, legIndex, (r) => r.copyWith(departureTime: v)),
           ),
           EditableTimeCell(
             width: colTime,
             value: leg.arrivalTime,
             enabled: _isEditing,
-            onChanged: (v) =>
-                _updateLeg(tripIndex, legIndex, (r) => r.copyWith(arrivalTime: v)),
+            onChanged: (v) => _updateLeg(
+                tripIndex, legIndex, (r) => r.copyWith(arrivalTime: v)),
           ),
           EditableTextCell(
             width: colLoc,
@@ -667,9 +664,31 @@ class _TaFormScreenState extends State<TaFormScreen> {
             width: colDayNight,
             value: leg.dayNight,
             enabled: _isEditing,
-            onChanged: (v) =>
-                _updateLeg(tripIndex, legIndex, (r) => r.copyWith(dayNight: v)),
+            onChanged: (v) => _updateLeg(
+                tripIndex, legIndex, (r) => r.copyWith(dayNight: v)),
           ),
+        ],
+      ),
+    );
+  }
+
+  // ── Right part of a leg row: Amount + Action button ───────────────────────
+  Widget _buildLegRowRight(
+    int tripIndex,
+    int legIndex,
+    TripRow leg,
+    double colAmount,
+    double colAction,
+  ) {
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: theme.colorScheme.outline.withOpacity(0.2)),
+        ),
+      ),
+      child: Row(
+        children: [
           ReadOnlyCell(
             width: colAmount,
             value: leg.rateAmount == 0 ? '—' : leg.rateAmount.toStringAsFixed(2),
@@ -678,11 +697,16 @@ class _TaFormScreenState extends State<TaFormScreen> {
           if (_isEditing)
             SizedBox(
               width: colAction,
-              child: IconButton(
-                icon: const Icon(Icons.cancel, color: Colors.red, size: 20),
-                onPressed: _trips[tripIndex].legs.length > 1
-                    ? () => _removeLeg(tripIndex, legIndex)
-                    : null,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  icon: const Icon(Icons.cancel, color: Colors.red, size: 20),
+                  onPressed: _trips[tripIndex].legs.length > 1
+                      ? () => _removeLeg(tripIndex, legIndex)
+                      : null,
+                ),
               ),
             ),
         ],
