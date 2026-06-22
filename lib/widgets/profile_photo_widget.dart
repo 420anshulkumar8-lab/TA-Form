@@ -18,43 +18,60 @@ class ProfilePhotoWidget extends StatelessWidget {
   const ProfilePhotoWidget({super.key, this.size = 84});
 
   Future<void> _pickAndSave(BuildContext context, ImageSource source) async {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(
-      source: source,
-      imageQuality: 90,
-      maxWidth: 1200,
-    );
-    if (picked == null) return;
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: source,
+        imageQuality: 90,
+        maxWidth: 1200,
+      );
+      if (picked == null) return;
 
-    // WhatsApp-style crop step — square crop, before the photo is saved.
-    final cropped = await ImageCropper().cropImage(
-      sourcePath: picked.path,
-      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-      compressQuality: 85,
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: 'Adjust Photo',
-          toolbarColor: const Color(0xFF1565C0),
-          toolbarWidgetColor: Colors.white,
-          lockAspectRatio: true,
-          cropStyle: CropStyle.circle,
-          initAspectRatio: CropAspectRatioPreset.square,
-        ),
-        IOSUiSettings(
-          title: 'Adjust Photo',
-          aspectRatioLockEnabled: true,
-          cropStyle: CropStyle.circle,
-        ),
-      ],
-    );
-    if (cropped == null) return; // user cancelled the crop step
+      String? finalPath;
 
-    final dir = await getApplicationDocumentsDirectory();
-    final dest = File('${dir.path}/profile_photo.jpg');
-    await File(cropped.path).copy(dest.path);
+      // Try crop step — if it crashes/fails, fall back to saving directly.
+      try {
+        final cropped = await ImageCropper().cropImage(
+          sourcePath: picked.path,
+          aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+          compressQuality: 85,
+          uiSettings: [
+            AndroidUiSettings(
+              toolbarTitle: 'Adjust Photo',
+              toolbarColor: const Color(0xFF1565C0),
+              toolbarWidgetColor: Colors.white,
+              lockAspectRatio: true,
+              initAspectRatio: CropAspectRatioPreset.square,
+              hideBottomControls: false,
+            ),
+            IOSUiSettings(
+              title: 'Adjust Photo',
+              aspectRatioLockEnabled: true,
+            ),
+          ],
+        );
+        finalPath = cropped?.path;
+      } catch (_) {
+        // Cropper not available / crashed — use original image directly
+        finalPath = picked.path;
+      }
 
-    if (context.mounted) {
-      await context.read<AppProvider>().setProfilePhoto(dest.path);
+      if (finalPath == null) return; // user cancelled crop
+
+      final dir = await getApplicationDocumentsDirectory();
+      final dest = File('${dir.path}/profile_photo.jpg');
+      await File(finalPath).copy(dest.path);
+
+      if (context.mounted) {
+        await context.read<AppProvider>().setProfilePhoto(dest.path);
+      }
+    } catch (e) {
+      // Catch any outer error (permission denied, etc.) silently
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Photo select nahi ho saka, dobara try karein')),
+        );
+      }
     }
   }
 
