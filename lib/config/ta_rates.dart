@@ -1,37 +1,39 @@
 // lib/config/ta_rates.dart
 // ─────────────────────────────────────────────────────────────────────────────
-// TA amount is auto-calculated from the duration between departure and
-// arrival time, and the employee's Level (1-9). Edit this file when
-// government rates change.
+// Amount options shown in the per-date dropdown. The user selects one value
+// for each unique travel date; that same amount applies to every row on that
+// date (merged cell). No auto-calculation — employee knows which slab applies.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class TaRates {
-  // Level 1-5 slabs
-  static const double level1to5Upto6h = 187.5;
-  static const double level1to5Upto12h = 437.5;
-  static const double level1to5Above12h = 625.0;
+  /// Options for Level 1–5 employees (ascending order for dropdown display).
+  static const List<double> level1to5Options = [
+    625.00,
+    437.50,
+    187.50,
+    125.00,
+  ];
 
-  // Level 6-9 slabs
-  static const double level6to9Upto6h = 300.0;
-  static const double level6to9Upto12h = 700.0;
-  static const double level6to9Above12h = 1000.0;
+  /// Options for Level 6–9 employees.
+  static const List<double> level6to9Options = [
+    1000.00,
+    700.00,
+    300.00,
+    200.00,
+  ];
 
-  /// Returns the TA amount for a single travel row given the employee's
-  /// [level] (1-9) and the journey [duration].
-  ///
-  ///   duration <= 6h   → "upto6h" slab
-  ///   6h < duration <= 12h → "upto12h" slab
-  ///   duration > 12h   → "above12h" slab
-  static double amountForDuration(int level, Duration duration) {
-    final hours = duration.inMinutes / 60.0;
-    final isHigherLevel = level >= 6;
+  /// Returns the correct option list for the given employee level (1-9).
+  static List<double> optionsForLevel(int level) {
+    return level >= 6 ? level6to9Options : level1to5Options;
+  }
 
-    if (hours <= 6) {
-      return isHigherLevel ? level6to9Upto6h : level1to5Upto6h;
-    } else if (hours <= 12) {
-      return isHigherLevel ? level6to9Upto12h : level1to5Upto12h;
-    } else {
-      return isHigherLevel ? level6to9Above12h : level1to5Above12h;
+  /// Formats a double amount for display: shows ".00" only when needed.
+  static String format(double amount) {
+    if (amount == amount.truncateToDouble()) {
+      return amount.toStringAsFixed(0);
     }
+    // Show up to 2 decimal places, strip trailing zero
+    final s = amount.toStringAsFixed(2);
+    return s.endsWith('0') ? s.substring(0, s.length - 1) : s;
   }
 }
