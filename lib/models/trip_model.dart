@@ -1,31 +1,28 @@
 // lib/models/trip_model.dart
 // ─────────────────────────────────────────────────────────────────────────────
-// Plain Dart models for TA data. Stored as JSON inside Hive ta_sessions.
-//
-// A month's TA is a list of TripGroups ("Trip 1", "Trip 2", ...). Each trip
-// represents one headquarters-out-and-back journey and contains one or more
-// TripRow "legs" (e.g. GZB→NDLS, NDLS→GZB). All legs of a trip share a single
-// Purpose, entered once and shown merged across the trip's rows.
+// Amount logic: one amount per unique date across the ENTIRE month, regardless
+// of how many trips or rows fall on that date. The user picks the amount from
+// a dropdown (4 options based on their Level). Amount is stored in
+// TaFormData.dateAmounts as a Map<String date, double amount> so that every
+// row sharing the same date automatically shows the same merged amount cell.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// How the "Vehicle / Train No." cell of a leg was filled.
 enum VehicleEntryType { train, other }
 
-/// One travel leg (a single row in the printed table) belonging to a Trip.
+/// One travel leg — a single row in the printed table.
 class TripRow {
-  final String date; // DD/MM/YYYY — must fall within the session's month
-  final bool dateIsSuggested; // true until the user explicitly confirms it
+  final String date; // DD/MM/YYYY
+  final bool dateIsSuggested;
   final VehicleEntryType vehicleEntryType;
-  final String vehicleNumber; // 5-digit train no., or free text if "other"
+  final String vehicleNumber;
   final String departureTime; // HH:MM (24h)
   final String arrivalTime; // HH:MM (24h)
   final String fromLocation;
-  final bool fromIsSuggested; // true until the user explicitly confirms it
+  final bool fromIsSuggested;
   final String toLocation;
-  final bool toIsSuggested; // true until the user explicitly confirms it
+  final bool toIsSuggested;
   final double distanceKm; // optional
-  final String dayNight; // "Day" | "Night" | "" (optional)
-  final double rateAmount; // auto-calculated from departure/arrival + level
+  final String dayNight; // "Day" | "Night" | ""
 
   const TripRow({
     this.date = '',
@@ -40,7 +37,6 @@ class TripRow {
     this.toIsSuggested = false,
     this.distanceKm = 0,
     this.dayNight = '',
-    this.rateAmount = 0,
   });
 
   TripRow copyWith({
@@ -56,7 +52,6 @@ class TripRow {
     bool? toIsSuggested,
     double? distanceKm,
     String? dayNight,
-    double? rateAmount,
   }) {
     return TripRow(
       date: date ?? this.date,
@@ -71,29 +66,25 @@ class TripRow {
       toIsSuggested: toIsSuggested ?? this.toIsSuggested,
       distanceKm: distanceKm ?? this.distanceKm,
       dayNight: dayNight ?? this.dayNight,
-      rateAmount: rateAmount ?? this.rateAmount,
     );
   }
 
-  factory TripRow.fromJson(Map<String, dynamic> json) {
-    return TripRow(
-      date: json['date'] ?? '',
-      dateIsSuggested: json['date_is_suggested'] ?? false,
-      vehicleEntryType: json['vehicle_entry_type'] == 'other'
-          ? VehicleEntryType.other
-          : VehicleEntryType.train,
-      vehicleNumber: json['vehicle_number'] ?? '',
-      departureTime: json['departure_time'] ?? '',
-      arrivalTime: json['arrival_time'] ?? '',
-      fromLocation: json['from_location'] ?? '',
-      fromIsSuggested: json['from_is_suggested'] ?? false,
-      toLocation: json['to_location'] ?? '',
-      toIsSuggested: json['to_is_suggested'] ?? false,
-      distanceKm: (json['distance_km'] ?? 0).toDouble(),
-      dayNight: json['day_night'] ?? '',
-      rateAmount: (json['rate_amount'] ?? 0).toDouble(),
-    );
-  }
+  factory TripRow.fromJson(Map<String, dynamic> json) => TripRow(
+        date: json['date'] ?? '',
+        dateIsSuggested: json['date_is_suggested'] ?? false,
+        vehicleEntryType: json['vehicle_entry_type'] == 'other'
+            ? VehicleEntryType.other
+            : VehicleEntryType.train,
+        vehicleNumber: json['vehicle_number'] ?? '',
+        departureTime: json['departure_time'] ?? '',
+        arrivalTime: json['arrival_time'] ?? '',
+        fromLocation: json['from_location'] ?? '',
+        fromIsSuggested: json['from_is_suggested'] ?? false,
+        toLocation: json['to_location'] ?? '',
+        toIsSuggested: json['to_is_suggested'] ?? false,
+        distanceKm: (json['distance_km'] ?? 0).toDouble(),
+        dayNight: json['day_night'] ?? '',
+      );
 
   Map<String, dynamic> toJson() => {
         'date': date,
@@ -109,13 +100,12 @@ class TripRow {
         'to_is_suggested': toIsSuggested,
         'distance_km': distanceKm,
         'day_night': dayNight,
-        'rate_amount': rateAmount,
       };
 }
 
-/// A single headquarters-out-and-back trip: one shared Purpose + its legs.
+/// One headquarters-out-and-back journey: shared Purpose + its legs.
 class TripGroup {
-  final String purpose; // shared by every leg in this trip
+  final String purpose;
   final List<TripRow> legs;
 
   const TripGroup({
@@ -123,14 +113,10 @@ class TripGroup {
     required this.legs,
   });
 
-  TripGroup copyWith({String? purpose, List<TripRow>? legs}) {
-    return TripGroup(
-      purpose: purpose ?? this.purpose,
-      legs: legs ?? this.legs,
-    );
-  }
-
-  double get tripTotal => legs.fold(0.0, (sum, r) => sum + r.rateAmount);
+  TripGroup copyWith({String? purpose, List<TripRow>? legs}) => TripGroup(
+        purpose: purpose ?? this.purpose,
+        legs: legs ?? this.legs,
+      );
 
   factory TripGroup.fromJson(Map<String, dynamic> json) => TripGroup(
         purpose: json['purpose'] ?? '',
@@ -144,10 +130,7 @@ class TripGroup {
         'legs': legs.map((r) => r.toJson()).toList(),
       };
 
-  /// A fresh trip group with 2 blank legs (the default starting state).
-  static TripGroup blank() => const TripGroup(
-        legs: [TripRow(), TripRow()],
-      );
+  static TripGroup blank() => const TripGroup(legs: [TripRow(), TripRow()]);
 }
 
 class TaFormData {
@@ -156,8 +139,14 @@ class TaFormData {
   final String month;
   final String year;
   final List<TripGroup> trips;
+
+  /// Date → amount map. Key = "DD/MM/YYYY", value = user-selected amount.
+  /// One entry per unique date across all trips. Used to render the merged
+  /// Amount cell and to compute the grand total.
+  final Map<String, double> dateAmounts;
+
   final double grandTotal;
-  final String status; // "draft" | "submitted"
+  final String status;
 
   const TaFormData({
     this.formRef = 'GA-31',
@@ -165,6 +154,7 @@ class TaFormData {
     required this.month,
     required this.year,
     required this.trips,
+    this.dateAmounts = const {},
     this.grandTotal = 0,
     this.status = 'draft',
   });
@@ -177,6 +167,8 @@ class TaFormData {
         trips: (json['trips'] as List<dynamic>? ?? [])
             .map((t) => TripGroup.fromJson(t as Map<String, dynamic>))
             .toList(),
+        dateAmounts: (json['date_amounts'] as Map<String, dynamic>? ?? {})
+            .map((k, v) => MapEntry(k, (v as num).toDouble())),
         grandTotal: (json['grand_total'] ?? 0).toDouble(),
         status: json['status'] ?? 'draft',
       );
@@ -187,6 +179,7 @@ class TaFormData {
         'month': month,
         'year': year,
         'trips': trips.map((t) => t.toJson()).toList(),
+        'date_amounts': dateAmounts,
         'grand_total': grandTotal,
         'status': status,
       };
