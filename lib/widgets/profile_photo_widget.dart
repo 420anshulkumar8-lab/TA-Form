@@ -1,80 +1,119 @@
 // lib/widgets/profile_photo_widget.dart
-// ─────────────────────────────────────────────────────────────────────────────
-// Optional circular profile photo, shown on the Home screen. Tapping it
-// opens a WhatsApp-style bottom sheet: View Photo / Change Photo /
-// Remove Photo (the last two only when relevant).
-// ─────────────────────────────────────────────────────────────────────────────
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
 
 class ProfilePhotoWidget extends StatelessWidget {
   final double size;
-
   const ProfilePhotoWidget({super.key, this.size = 84});
 
+  // ── Permission request ────────────────────────────────────────────────────
+  Future<bool> _requestPermission(ImageSource source) async {
+    if (source == ImageSource.camera) {
+      final status = await Permission.camera.request();
+      return status.isGranted;
+    } else {
+      // Android 13+ uses READ_MEDIA_IMAGES, older uses READ_EXTERNAL_STORAGE
+      PermissionStatus status;
+      if (Platform.isAndroid) {
+        status = await Permission.photos.request();
+        if (!status.isGranted) {
+          status = await Permission.storage.request();
+        }
+      } else {
+        status = await Permission.photos.request();
+      }
+      return status.isGranted;
+    }
+  }
+
+  // ── Pick → Crop → Save ───────────────────────────────────────────────────
   Future<void> _pickAndSave(BuildContext context, ImageSource source) async {
+    // 1. Request permission first
+    final granted = await _requestPermission(source);
+    if (!granted) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Permission required. Please allow in settings.'),
+            action: SnackBarAction(
+              label: 'Settings',
+              onPressed: () => openAppSettings(),
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    // 2. Pick image
+    XFile? picked;
     try {
-      final picker = ImagePicker();
-      final picked = await picker.pickImage(
+      picked = await ImagePicker().pickImage(
         source: source,
         imageQuality: 90,
         maxWidth: 1200,
       );
-      if (picked == null) return;
-
-      String? finalPath;
-
-      // Try crop step — if it crashes/fails, fall back to saving directly.
-      try {
-        final cropped = await ImageCropper().cropImage(
-          sourcePath: picked.path,
-          aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-          compressQuality: 85,
-          uiSettings: [
-            AndroidUiSettings(
-              toolbarTitle: 'Adjust Photo',
-              toolbarColor: const Color(0xFF1565C0),
-              toolbarWidgetColor: Colors.white,
-              lockAspectRatio: true,
-              initAspectRatio: CropAspectRatioPreset.square,
-              hideBottomControls: false,
-            ),
-            IOSUiSettings(
-              title: 'Adjust Photo',
-              aspectRatioLockEnabled: true,
-            ),
-          ],
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Photo select nahi ho saka.')),
         );
-        finalPath = cropped?.path;
-      } catch (_) {
-        // Cropper not available / crashed — use original image directly
-        finalPath = picked.path;
       }
+      return;
+    }
+    if (picked == null) return;
 
-      if (finalPath == null) return; // user cancelled crop
+    // 3. Crop (optional — if cropper fails, use original)
+    String savePath = picked.path;
+    try {
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: picked.path,
+        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+        compressQuality: 85,
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'Adjust Photo',
+            toolbarColor: const Color(0xFF1565C0),
+            toolbarWidgetColor: Colors.white,
+            lockAspectRatio: true,
+            initAspectRatio: CropAspectRatioPreset.square,
+            showCropGrid: true,
+          ),
+          IOSUiSettings(
+            title: 'Adjust Photo',
+            aspectRatioLockEnabled: true,
+          ),
+        ],
+      );
+      if (cropped != null) savePath = cropped.path;
+    } catch (_) {
+      // Cropper unavailable — use original photo as-is
+    }
 
+    // 4. Copy to app's documents directory and update provider
+    try {
       final dir = await getApplicationDocumentsDirectory();
       final dest = File('${dir.path}/profile_photo.jpg');
-      await File(finalPath).copy(dest.path);
-
+      await File(savePath).copy(dest.path);
       if (context.mounted) {
         await context.read<AppProvider>().setProfilePhoto(dest.path);
       }
     } catch (e) {
-      // Catch any outer error (permission denied, etc.) silently
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Photo select nahi ho saka, dobara try karein')),
+          const SnackBar(content: Text('Photo save nahi ho saka.')),
         );
       }
     }
   }
 
+  // ── Bottom sheet options ──────────────────────────────────────────────────
   void _openOptions(BuildContext context) {
     final hasPhoto = context.read<AppProvider>().profile.photoPath.isNotEmpty;
 
@@ -108,7 +147,7 @@ class ProfilePhotoWidget extends StatelessWidget {
               ),
             ListTile(
               leading: const Icon(Icons.photo_camera_outlined),
-              title: Text(hasPhoto ? 'Change Photo' : 'Add Photo (Camera)'),
+              title: Text(hasPhoto ? 'Change Photo (Camera)' : 'Add Photo (Camera)'),
               onTap: () {
                 Navigator.pop(ctx);
                 _pickAndSave(context, ImageSource.camera);
@@ -142,7 +181,6 @@ class ProfilePhotoWidget extends StatelessWidget {
   void _viewPhoto(BuildContext context) {
     final path = context.read<AppProvider>().profile.photoPath;
     if (path.isEmpty) return;
-
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
@@ -161,7 +199,8 @@ class ProfilePhotoWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final photoPath = context.watch<AppProvider>().profile.photoPath;
-    final hasPhoto = photoPath.isNotEmpty && File(photoPath).existsSync();
+    final hasPhoto = photoPath.isNotEmpty &&
+        File(photoPath).existsSync();
     final theme = Theme.of(context);
 
     return GestureDetector(
