@@ -49,12 +49,14 @@ class _FlatLeg {
   final String purpose;
   final bool isFirstOfTrip;
   final bool isLastOfTrip;
+  final double amount; // date-level amount from TaFormData.dateAmounts
   const _FlatLeg({
     required this.leg,
     required this.tripIndex,
     required this.purpose,
     required this.isFirstOfTrip,
     required this.isLastOfTrip,
+    this.amount = 0,
   });
 }
 
@@ -80,7 +82,9 @@ class PdfService {
       contingentData = ContingentFormData.fromJson(session.formDataContingent!);
     }
 
-    final flatLegs = _flattenTrips(taData?.trips ?? <TripGroup>[]);
+    final flatLegs = _flattenTrips(
+        taData?.trips ?? <TripGroup>[],
+        taData?.dateAmounts ?? <String, double>{});
 
     // ── Decide row height / font size for the WHOLE TA table, then split
     //    legs between page 1 and page 2 based on how many fit on page 1. ───
@@ -195,17 +199,20 @@ class PdfService {
 
   // ── Flatten Trips → legs, tagging each with its trip's shared Purpose and
   //    its first/last-of-trip position (needed for the bracket later). ──────
-  static List<_FlatLeg> _flattenTrips(List<TripGroup> trips) {
+  static List<_FlatLeg> _flattenTrips(
+      List<TripGroup> trips, Map<String, double> dateAmounts) {
     final flat = <_FlatLeg>[];
     for (int t = 0; t < trips.length; t++) {
       final trip = trips[t];
       for (int i = 0; i < trip.legs.length; i++) {
+        final leg = trip.legs[i];
         flat.add(_FlatLeg(
-          leg: trip.legs[i],
+          leg: leg,
           tripIndex: t,
           purpose: trip.purpose,
           isFirstOfTrip: i == 0,
           isLastOfTrip: i == trip.legs.length - 1,
+          amount: dateAmounts[leg.date] ?? 0.0,
         ));
       }
     }
@@ -245,8 +252,7 @@ class PdfService {
     ];
   }
 
-  // ── Leg rows (everything except the Purpose column) — used for both
-  //    page 1 & page 2. ──────────────────────────────────────────────────
+  // ── Leg rows (everything except Purpose column) ───────────────────────────
   static List<pw.Widget> _legRows(
     List<_FlatLeg> flatLegs,
     double rowHeight,
@@ -255,6 +261,7 @@ class PdfService {
   ) {
     final widgets = <pw.Widget>[];
     double y = startY;
+    final seenDates = <String>{};
 
     for (final flat in flatLegs) {
       final leg = flat.leg;
@@ -269,9 +276,13 @@ class PdfService {
           FormLayout.kmX, y, fontSize));
       widgets.add(_overlayText(leg.dayNight, FormLayout.dayNightX, y, fontSize));
 
-      final amt = _splitAmount(leg.rateAmount);
-      widgets.add(_overlayText(amt.rupees, FormLayout.amountRsX, y, fontSize));
-      widgets.add(_overlayText(amt.paise, FormLayout.amountPaiseX, y, fontSize));
+      // Amount: only print on first occurrence of this date (date-merged)
+      if (leg.date.isNotEmpty && !seenDates.contains(leg.date)) {
+        seenDates.add(leg.date);
+        final amt = _splitAmount(flat.amount);
+        widgets.add(_overlayText(amt.rupees, FormLayout.amountRsX, y, fontSize));
+        widgets.add(_overlayText(amt.paise, FormLayout.amountPaiseX, y, fontSize));
+      }
 
       y += rowHeight;
     }
