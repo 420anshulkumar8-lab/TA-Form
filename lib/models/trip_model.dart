@@ -7,7 +7,7 @@
 // row sharing the same date automatically shows the same merged amount cell.
 // ─────────────────────────────────────────────────────────────────────────────
 
-enum VehicleEntryType { train, other }
+enum VehicleEntryType { train, other, halt }
 
 /// One travel leg — a single row in the printed table.
 class TripRow {
@@ -72,9 +72,11 @@ class TripRow {
   factory TripRow.fromJson(Map<String, dynamic> json) => TripRow(
         date: json['date'] ?? '',
         dateIsSuggested: json['date_is_suggested'] ?? false,
-        vehicleEntryType: json['vehicle_entry_type'] == 'other'
-            ? VehicleEntryType.other
-            : VehicleEntryType.train,
+        vehicleEntryType: json['vehicle_entry_type'] == 'halt'
+            ? VehicleEntryType.halt
+            : json['vehicle_entry_type'] == 'other'
+                ? VehicleEntryType.other
+                : VehicleEntryType.train,
         vehicleNumber: json['vehicle_number'] ?? '',
         departureTime: json['departure_time'] ?? '',
         arrivalTime: json['arrival_time'] ?? '',
@@ -89,8 +91,11 @@ class TripRow {
   Map<String, dynamic> toJson() => {
         'date': date,
         'date_is_suggested': dateIsSuggested,
-        'vehicle_entry_type':
-            vehicleEntryType == VehicleEntryType.other ? 'other' : 'train',
+        'vehicle_entry_type': vehicleEntryType == VehicleEntryType.halt
+            ? 'halt'
+            : vehicleEntryType == VehicleEntryType.other
+                ? 'other'
+                : 'train',
         'vehicle_number': vehicleNumber,
         'departure_time': departureTime,
         'arrival_time': arrivalTime,
