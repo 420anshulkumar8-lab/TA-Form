@@ -13,6 +13,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import '../models/trip_model.dart';
 
 /// Dashed border painter for "suggested, not yet confirmed" cells.
 class _DashedBorderPainter extends CustomPainter {
@@ -290,20 +291,21 @@ class EditableTimeCell extends StatelessWidget {
   }
 }
 
-/// Vehicle / Train No. cell — tap shows Train vs Other choice, then the
-/// appropriate input (5-digit train number, or free text).
+/// Vehicle / Train No. cell — tap shows Train / Other / Halt choice.
+/// For Halt, a location dialog is shown and the merged row is handled
+/// by the parent screen (ta_form_screen.dart).
 class EditableVehicleCell extends StatelessWidget {
   final double width;
   final String value;
-  final bool isTrainType; // true = Train, false = Other
+  final VehicleEntryType vehicleType;
   final bool enabled;
-  final void Function(String value, bool isTrain) onChanged;
+  final void Function(String value, VehicleEntryType type) onChanged;
 
   const EditableVehicleCell({
     super.key,
     required this.width,
     required this.value,
-    required this.isTrainType,
+    required this.vehicleType,
     required this.enabled,
     required this.onChanged,
   });
@@ -326,12 +328,27 @@ class EditableVehicleCell extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.train),
               title: const Text('Train'),
+              trailing: vehicleType == VehicleEntryType.train
+                  ? const Icon(Icons.check, color: Colors.green)
+                  : null,
               onTap: () => Navigator.pop(ctx, 'train'),
             ),
             ListTile(
               leading: const Icon(Icons.directions_car),
-              title: const Text('Other'),
+              title: const Text('Other (Road / Taxi)'),
+              trailing: vehicleType == VehicleEntryType.other
+                  ? const Icon(Icons.check, color: Colors.green)
+                  : null,
               onTap: () => Navigator.pop(ctx, 'other'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.hotel, color: Color(0xFF3949AB)),
+              title: const Text('Halt / Stay'),
+              subtitle: const Text('No journey — stayed at outstation'),
+              trailing: vehicleType == VehicleEntryType.halt
+                  ? const Icon(Icons.check, color: Colors.green)
+                  : null,
+              onTap: () => Navigator.pop(ctx, 'halt'),
             ),
             const SizedBox(height: 8),
           ],
@@ -342,7 +359,8 @@ class EditableVehicleCell extends StatelessWidget {
     if (choice == null || !context.mounted) return;
 
     if (choice == 'train') {
-      final ctrl = TextEditingController(text: isTrainType ? value : '');
+      final ctrl = TextEditingController(
+          text: vehicleType == VehicleEntryType.train ? value : '');
       final result = await showDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -370,10 +388,11 @@ class EditableVehicleCell extends StatelessWidget {
         ),
       );
       if (result != null && result.trim().isNotEmpty) {
-        onChanged(result.trim(), true);
+        onChanged(result.trim(), VehicleEntryType.train);
       }
-    } else {
-      final ctrl = TextEditingController(text: !isTrainType ? value : '');
+    } else if (choice == 'other') {
+      final ctrl = TextEditingController(
+          text: vehicleType == VehicleEntryType.other ? value : '');
       final result = await showDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -396,13 +415,76 @@ class EditableVehicleCell extends StatelessWidget {
         ),
       );
       if (result != null && result.trim().isNotEmpty) {
-        onChanged(result.trim(), false);
+        onChanged(result.trim(), VehicleEntryType.other);
+      }
+    } else {
+      // Halt — ask for stay location
+      final ctrl = TextEditingController(
+          text: vehicleType == VehicleEntryType.halt ? value : '');
+      final result = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.hotel, color: Color(0xFF3949AB)),
+              SizedBox(width: 8),
+              Text('Halt Location'),
+            ],
+          ),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              hintText: 'e.g. Nagpur, Delhi...',
+              labelText: 'City / Station name',
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      if (result != null && result.trim().isNotEmpty) {
+        onChanged(result.trim(), VehicleEntryType.halt);
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // For halt type, this cell is never rendered directly (parent shows
+    // the merged "Halt at X" cell instead). But keep a safe fallback.
+    if (vehicleType == VehicleEntryType.halt) {
+      return _CellShell(
+        width: width,
+        enabled: enabled,
+        onTap: () => _pick(context),
+        child: Row(
+          children: [
+            const Icon(Icons.hotel, size: 14, color: Color(0xFF3949AB)),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                value.isEmpty ? 'Halt' : 'Halt at $value',
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF3949AB),
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return _CellShell(
       width: width,
       enabled: enabled,
