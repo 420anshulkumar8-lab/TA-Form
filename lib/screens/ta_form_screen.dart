@@ -661,15 +661,23 @@ class _TaFormScreenState extends State<TaFormScreen> {
 
   Widget _buildLegLeftCells(int tripIndex, int legIndex, TripRow leg) {
     final theme = Theme.of(context);
+    final isHalt = leg.vehicleEntryType == VehicleEntryType.halt;
+
+    // Total width of columns that merge into "Halt at X" cell
+    const double mergedHaltWidth = _colVehicle +
+        _colTime + _colTime +
+        _colLoc + _colLoc +
+        _colKm + _colDayNight; // 110+80+80+110+110+70+80 = 640
+
     return Container(
       decoration: BoxDecoration(
         border: Border(
-          bottom: BorderSide(
-              color: theme.colorScheme.outline.withOpacity(0.2)),
+          bottom: BorderSide(color: theme.colorScheme.outline.withOpacity(0.2)),
         ),
       ),
       child: Row(
         children: [
+          // Date — always shown
           EditableDateCell(
             width: _colDate,
             value: leg.date,
@@ -680,70 +688,147 @@ class _TaFormScreenState extends State<TaFormScreen> {
             onChanged: (v) => _updateLeg(tripIndex, legIndex,
                 (r) => r.copyWith(date: v, dateIsSuggested: false)),
           ),
-          EditableVehicleCell(
-            width: _colVehicle,
-            value: leg.vehicleNumber,
-            isTrainType: leg.vehicleEntryType == VehicleEntryType.train,
-            enabled: _isEditing,
-            onChanged: (v, isTrain) => _updateLeg(
-                tripIndex,
-                legIndex,
-                (r) => r.copyWith(
-                      vehicleNumber: v,
-                      vehicleEntryType: isTrain
-                          ? VehicleEntryType.train
-                          : VehicleEntryType.other,
-                    )),
-          ),
-          EditableTimeCell(
-            width: _colTime,
-            value: leg.departureTime,
-            enabled: _isEditing,
-            onChanged: (v) => _updateLeg(
-                tripIndex, legIndex, (r) => r.copyWith(departureTime: v)),
-          ),
-          EditableTimeCell(
-            width: _colTime,
-            value: leg.arrivalTime,
-            enabled: _isEditing,
-            onChanged: (v) => _updateLeg(
-                tripIndex, legIndex, (r) => r.copyWith(arrivalTime: v)),
-          ),
-          EditableTextCell(
-            width: _colLoc,
-            value: leg.fromLocation,
-            label: 'From',
-            enabled: _isEditing,
-            isSuggested: leg.fromIsSuggested,
-            onChanged: (v) => _updateLeg(tripIndex, legIndex,
-                (r) => r.copyWith(fromLocation: v, fromIsSuggested: false)),
-          ),
-          EditableTextCell(
-            width: _colLoc,
-            value: leg.toLocation,
-            label: 'To',
-            enabled: _isEditing,
-            isSuggested: leg.toIsSuggested,
-            onChanged: (v) => _updateLeg(tripIndex, legIndex,
-                (r) => r.copyWith(toLocation: v, toIsSuggested: false)),
-          ),
-          EditableTextCell(
-            width: _colKm,
-            value:
-                leg.distanceKm == 0 ? '' : leg.distanceKm.toStringAsFixed(0),
-            label: 'Kilometre',
-            enabled: _isEditing,
-            keyboardType: TextInputType.number,
-            onChanged: (v) => _updateLeg(tripIndex, legIndex,
-                (r) => r.copyWith(distanceKm: double.tryParse(v) ?? 0)),
-          ),
-          EditableDayNightCell(
-            width: _colDayNight,
-            value: leg.dayNight,
-            enabled: _isEditing,
-            onChanged: (v) => _updateLeg(
-                tripIndex, legIndex, (r) => r.copyWith(dayNight: v)),
-          ),
+
+          if (isHalt)
+            // ── "Halt at Location" merged cell ───────────────────────────
+            GestureDetector(
+              onTap: _isEditing
+                  ? () async {
+                      final ctrl =
+                          TextEditingController(text: leg.vehicleNumber);
+                      final result = await showDialog<String>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Row(children: [
+                            Icon(Icons.hotel, color: Color(0xFF3949AB)),
+                            SizedBox(width: 8),
+                            Text('Halt Location'),
+                          ]),
+                          content: TextField(
+                            controller: ctrl,
+                            autofocus: true,
+                            textCapitalization: TextCapitalization.words,
+                            decoration: const InputDecoration(
+                              border: OutlineInputBorder(),
+                              hintText: 'e.g. Nagpur, Delhi...',
+                              labelText: 'City / Station name',
+                            ),
+                          ),
+                          actions: [
+                            TextButton(
+                                onPressed: () => Navigator.pop(ctx),
+                                child: const Text('Cancel')),
+                            ElevatedButton(
+                              onPressed: () => Navigator.pop(ctx, ctrl.text),
+                              child: const Text('OK'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (result != null && result.trim().isNotEmpty) {
+                        _updateLeg(tripIndex, legIndex,
+                            (r) => r.copyWith(vehicleNumber: result.trim()));
+                      }
+                    }
+                  : null,
+              child: Container(
+                width: mergedHaltWidth,
+                height: _rowHeight,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF3949AB).withOpacity(0.06),
+                  border: Border(
+                    right: BorderSide(
+                        color: theme.colorScheme.outline.withOpacity(0.25)),
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.hotel,
+                        size: 15,
+                        color: const Color(0xFF3949AB).withOpacity(0.8)),
+                    const SizedBox(width: 6),
+                    Text(
+                      leg.vehicleNumber.isEmpty
+                          ? 'Halt  (tap to set location)'
+                          : 'Halt at ${leg.vehicleNumber}',
+                      style: TextStyle(
+                        fontStyle: FontStyle.italic,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: leg.vehicleNumber.isEmpty
+                            ? Colors.grey
+                            : const Color(0xFF3949AB),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else ...[
+            // ── Normal journey columns ────────────────────────────────────
+            EditableVehicleCell(
+              width: _colVehicle,
+              value: leg.vehicleNumber,
+              vehicleType: leg.vehicleEntryType,
+              enabled: _isEditing,
+              onChanged: (v, type) => _updateLeg(
+                  tripIndex,
+                  legIndex,
+                  (r) => r.copyWith(vehicleNumber: v, vehicleEntryType: type)),
+            ),
+            EditableTimeCell(
+              width: _colTime,
+              value: leg.departureTime,
+              enabled: _isEditing,
+              onChanged: (v) => _updateLeg(
+                  tripIndex, legIndex, (r) => r.copyWith(departureTime: v)),
+            ),
+            EditableTimeCell(
+              width: _colTime,
+              value: leg.arrivalTime,
+              enabled: _isEditing,
+              onChanged: (v) => _updateLeg(
+                  tripIndex, legIndex, (r) => r.copyWith(arrivalTime: v)),
+            ),
+            EditableTextCell(
+              width: _colLoc,
+              value: leg.fromLocation,
+              label: 'From',
+              enabled: _isEditing,
+              isSuggested: leg.fromIsSuggested,
+              onChanged: (v) => _updateLeg(tripIndex, legIndex,
+                  (r) => r.copyWith(fromLocation: v, fromIsSuggested: false)),
+            ),
+            EditableTextCell(
+              width: _colLoc,
+              value: leg.toLocation,
+              label: 'To',
+              enabled: _isEditing,
+              isSuggested: leg.toIsSuggested,
+              onChanged: (v) => _updateLeg(tripIndex, legIndex,
+                  (r) => r.copyWith(toLocation: v, toIsSuggested: false)),
+            ),
+            EditableTextCell(
+              width: _colKm,
+              value: leg.distanceKm == 0
+                  ? ''
+                  : leg.distanceKm.toStringAsFixed(0),
+              label: 'Kilometre',
+              enabled: _isEditing,
+              keyboardType: TextInputType.number,
+              onChanged: (v) => _updateLeg(tripIndex, legIndex,
+                  (r) => r.copyWith(distanceKm: double.tryParse(v) ?? 0)),
+            ),
+            EditableDayNightCell(
+              width: _colDayNight,
+              value: leg.dayNight,
+              enabled: _isEditing,
+              onChanged: (v) => _updateLeg(
+                  tripIndex, legIndex, (r) => r.copyWith(dayNight: v)),
+            ),
+          ],
         ],
       ),
     );
