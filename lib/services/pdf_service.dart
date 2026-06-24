@@ -265,18 +265,36 @@ class PdfService {
 
     for (final flat in flatLegs) {
       final leg = flat.leg;
-      widgets.add(_overlayText(leg.date, FormLayout.dateX, y, fontSize));
-      widgets.add(_overlayText(leg.vehicleNumber, FormLayout.vehicleX, y, fontSize));
-      widgets.add(_overlayText(leg.departureTime, FormLayout.departureX, y, fontSize));
-      widgets.add(_overlayText(leg.arrivalTime, FormLayout.arrivalX, y, fontSize));
-      widgets.add(_overlayText(leg.fromLocation, FormLayout.fromX, y, fontSize));
-      widgets.add(_overlayText(leg.toLocation, FormLayout.toX, y, fontSize));
-      widgets.add(_overlayText(
-          leg.distanceKm == 0 ? '' : leg.distanceKm.toStringAsFixed(0),
-          FormLayout.kmX, y, fontSize));
-      widgets.add(_overlayText(leg.dayNight, FormLayout.dayNightX, y, fontSize));
 
-      // Amount: only print on first occurrence of this date (date-merged)
+      if (leg.vehicleEntryType == VehicleEntryType.halt) {
+        // ── Halt row: only Date + centred "Halt at X" across middle columns
+        widgets.add(_overlayText(leg.date, FormLayout.dateX, y, fontSize));
+        final haltText = leg.vehicleNumber.isEmpty
+            ? 'Halt'
+            : 'Halt at ${leg.vehicleNumber}';
+        widgets.add(_overlayTextBox(
+          haltText,
+          FormLayout.vehicleX,
+          y,
+          fontSize,
+          width: FormLayout.purposeX - FormLayout.vehicleX,
+          textAlign: pw.TextAlign.center,
+        ));
+      } else {
+        // ── Normal journey row
+        widgets.add(_overlayText(leg.date, FormLayout.dateX, y, fontSize));
+        widgets.add(_overlayText(leg.vehicleNumber, FormLayout.vehicleX, y, fontSize));
+        widgets.add(_overlayText(leg.departureTime, FormLayout.departureX, y, fontSize));
+        widgets.add(_overlayText(leg.arrivalTime, FormLayout.arrivalX, y, fontSize));
+        widgets.add(_overlayText(leg.fromLocation, FormLayout.fromX, y, fontSize));
+        widgets.add(_overlayText(leg.toLocation, FormLayout.toX, y, fontSize));
+        widgets.add(_overlayText(
+            leg.distanceKm == 0 ? '' : leg.distanceKm.toStringAsFixed(0),
+            FormLayout.kmX, y, fontSize));
+        widgets.add(_overlayText(leg.dayNight, FormLayout.dayNightX, y, fontSize));
+      }
+
+      // Amount: print only on first occurrence of this date (date-merged)
       if (leg.date.isNotEmpty && !seenDates.contains(leg.date)) {
         seenDates.add(leg.date);
         final amt = _splitAmount(flat.amount);
@@ -462,6 +480,7 @@ class PdfService {
     double fontSize, {
     required double width,
     bool bold = false,
+    pw.TextAlign textAlign = pw.TextAlign.left,
   }) {
     return pw.Positioned(
       left: x,
@@ -470,6 +489,7 @@ class PdfService {
         width: width,
         child: pw.Text(
           text,
+          textAlign: textAlign,
           style: pw.TextStyle(
             font: bold ? pw.Font.courierBold() : pw.Font.courier(),
             fontSize: fontSize,
