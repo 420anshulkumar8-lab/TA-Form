@@ -63,7 +63,7 @@ class StatusBadgeWidget extends StatelessWidget {
         );
       case SessionStatus.submitted:
         return _StatusConfig(
-          label: 'Filled',
+          label: 'Finalized',
           icon: Icons.check_circle_outline,
           backgroundColor: const Color(0xFFE8F5E9),
           foregroundColor: const Color(0xFF2E7D32),
