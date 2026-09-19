@@ -1,0 +1,45 @@
+Name: Build Flutter APK
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch: 
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Install Packages
+        run: flutter pub get
+
+      - name: Fix printing plugin compileSdk
+        run: |
+          PRINTING_DIR=$(find ~/.pub-cache -path "*/printing-*/android" -type d | head -1)
+          if [ -n "$PRINTING_DIR" ]; then
+            sed -i 's/compileSdkVersion [0-9]*/compileSdkVersion 36/g' "$PRINTING_DIR/build.gradle"
+            sed -i 's/compileSdk [0-9]*/compileSdk 36/g' "$PRINTING_DIR/build.gradle"
+          fi
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TA-Form-App-APK
+          path: build/app/outputs/flutter-apk/app-release.apk
