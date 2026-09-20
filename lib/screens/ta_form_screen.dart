@@ -15,6 +15,7 @@ import '../widgets/merged_amount_cell_widget.dart';
 import '../widgets/merged_purpose_cell_widget.dart';
 import '../widgets/status_badge_widget.dart';
 import 'pdf_preview_screen.dart';
+import 'form_preview_screen.dart';
 
 class TaFormScreen extends StatefulWidget {
   final TaSession session;
@@ -31,6 +32,10 @@ class _TaFormScreenState extends State<TaFormScreen> {
   bool _showContingent = false;
   bool _isEditing = true;
   bool _isSaving = false;
+
+  // Controls the first trip's horizontal-scroll table so we can nudge it
+  // left→right→back once on first open, hinting that it scrolls sideways.
+  final ScrollController _firstTableScrollController = ScrollController();
 
   int get _monthNum => monthNameToNumber(widget.session.month);
   int get _yearNum => int.tryParse(widget.session.year) ?? DateTime.now().year;
@@ -70,6 +75,40 @@ class _TaFormScreenState extends State<TaFormScreen> {
     } else {
       _contingentEntries = [];
     }
+
+    // One-time hint: nudge the (horizontally scrollable) trip table
+    // left→right→back after the first frame, so new users notice it scrolls.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _playScrollHint());
+  }
+
+  @override
+  void dispose() {
+    _firstTableScrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _playScrollHint() async {
+    if (!_firstTableScrollController.hasClients) return;
+    final maxExtent = _firstTableScrollController.position.maxScrollExtent;
+    if (maxExtent <= 0) return; // nothing to scroll — table fits on screen
+
+    // Only nudge as far as needed to reveal there's more content, capped
+    // so it reads as a hint rather than a full scroll-through.
+    final target = maxExtent < 160 ? maxExtent : 160.0;
+
+    await Future.delayed(const Duration(milliseconds: 450));
+    if (!mounted || !_firstTableScrollController.hasClients) return;
+    await _firstTableScrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 550),
+      curve: Curves.easeInOut,
+    );
+    if (!mounted || !_firstTableScrollController.hasClients) return;
+    await _firstTableScrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 550),
+      curve: Curves.easeInOut,
+    );
   }
 
   // ── Amount helpers ────────────────────────────────────────────────────────
@@ -220,13 +259,16 @@ class _TaFormScreenState extends State<TaFormScreen> {
     await HiveService.saveSession(widget.session);
   }
 
-  Future<void> _confirmFinal() async {
+  /// The actual finalize/lock logic. Shows the confirmation dialog, and if
+  /// confirmed, marks the session's form data + status as submitted (locked).
+  /// Returns true if the session was finalized, false otherwise.
+  Future<bool> _confirmFinal() async {
     if (!_hasTaData && !_hasContingentData) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Kripya kam se kam ek entry bharein.'),
         backgroundColor: Colors.red,
       ));
-      return;
+      return false;
     }
     final confirmed = await showDialog<bool>(
       context: context,
@@ -248,7 +290,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true) return false;
     final p = _profile;
     widget.session.formDataTa = _hasTaData
         ? TaFormData(
@@ -273,11 +315,86 @@ class _TaFormScreenState extends State<TaFormScreen> {
         : null;
     widget.session.status = SessionStatus.submitted;
     widget.session.lastUpdated = DateTime.now().toIso8601String();
-    HiveService.saveSession(widget.session);
-    setState(() => _isEditing = false);
+    await HiveService.saveSession(widget.session);
+    if (mounted) setState(() => _isEditing = false);
+    return true;
   }
 
   // ── PDF ───────────────────────────────────────────────────────────────────
+
+  /// Generates the same original-form-style PDF used for the final printable
+  /// copy, but WITHOUT touching the session's status — used purely to show
+  /// the user a preview before they actually finalize.
+  Future<void> _openPreview() async {
+    if (!_hasTaData && !_hasContingentData) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Kripya kam se kam ek entry bharein.'),
+        backgroundColor: Colors.red,
+      ));
+      return;
+    }
+    setState(() => _isSaving = true);
+    try {
+      // Build a temporary in-memory session snapshot so the preview PDF
+      // reflects exactly what's on screen right now, without mutating (or
+      // saving) the real session's status.
+      final p = _profile;
+      final previewSession = TaSession(
+        month: widget.session.month,
+        year: widget.session.year,
+        employeeId: widget.session.employeeId,
+        status: widget.session.status,
+        formDataTa: _hasTaData
+            ? TaFormData(
+                employeeId: p.employeeNo,
+                month: widget.session.month,
+                year: widget.session.year,
+                trips: _trips,
+                dateAmounts: _dateAmounts,
+                grandTotal: _grandTaTotal,
+                status: 'draft',
+              ).toJson()
+            : null,
+        formDataContingent: _hasContingentData
+            ? ContingentFormData(
+                employeeId: p.employeeNo,
+                month: widget.session.month,
+                year: widget.session.year,
+                entries: _contingentEntries,
+                totalAmount: _grandContingentTotal,
+                status: 'draft',
+              ).toJson()
+            : null,
+      );
+
+      final pdfPath =
+          await PdfService.generatePdf(session: previewSession, profile: p);
+
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+
+      final finalized = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => FormPreviewScreen(
+            pdfPath: pdfPath,
+            title: '${widget.session.displayLabel} Preview',
+            onConfirmFinal: _confirmFinal,
+          ),
+        ),
+      );
+
+      // If finalized inside the preview screen, refresh this screen's state
+      // to reflect the now-submitted, read-only session.
+      if (finalized == true && mounted) setState(() {});
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Preview error: $e'), backgroundColor: Colors.red));
+      }
+    }
+  }
 
   Future<void> _generatePdf() async {
     setState(() => _isSaving = true);
@@ -336,64 +453,120 @@ class _TaFormScreenState extends State<TaFormScreen> {
                   if (_isEditing)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+                      child: InkWell(
+                        onTap: _addTrip,
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withOpacity(0.10),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .primary
+                                  .withOpacity(0.3),
+                              width: 1.2,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.add_road,
+                                  size: 18,
+                                  color: Theme.of(context).colorScheme.primary),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Add Trip ${_trips.length + 1} Details',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+
+                  // ── Divider before contingent ────────────────────────────
+                  const SizedBox(height: 40),
+                  const Divider(indent: 12, endIndent: 12, thickness: 1),
+                  const SizedBox(height: 24),
+
+                  // ── Contingent section ───────────────────────────────────
+                  if (_showContingent)
+                    Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 12),
+                      padding: const EdgeInsets.fromLTRB(0, 10, 0, 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF546E7A).withOpacity(0.03),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: const Color(0xFF546E7A).withOpacity(0.16),
+                          width: 1,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(10, 0, 10, 0),
+                            child: Row(children: [
+                              Expanded(
+                                child: Text('Contingent Bill',
+                                    style:
+                                        Theme.of(context).textTheme.titleMedium),
+                              ),
+                              if (_isEditing)
+                                IconButton(
+                                  icon: const Icon(Icons.close,
+                                      color: Colors.red),
+                                  onPressed: _removeContingentSection,
+                                ),
+                            ]),
+                          ),
+                          const SizedBox(height: 8),
+                          _buildContingentTable(),
+                          const SizedBox(height: 12),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(10, 0, 10, 0),
+                            child: Text(
+                              'Contingent Total: Rs. ${_grandContingentTotal.toStringAsFixed(2)}',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  if (_isEditing && !_showContingent)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
                       child: OutlinedButton.icon(
-                        onPressed: _addTrip,
-                        icon: const Icon(Icons.add_road),
-                        label: const Text('Add Trip'),
+                        onPressed: _addContingentSection,
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add Contingent'),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF1565C0),
+                          foregroundColor: const Color(0xFF546E7A),
                           side: const BorderSide(
-                              color: Color(0xFF1565C0), width: 1.4),
+                              color: Color(0xFF546E7A), width: 1.2),
                           padding: const EdgeInsets.symmetric(
                               horizontal: 18, vertical: 12),
                         ),
                       ),
                     ),
 
-                  // ── Divider before contingent ────────────────────────────
-                  const SizedBox(height: 32),
-                  const Divider(indent: 12, endIndent: 12),
-                  const SizedBox(height: 16),
-
-                  // ── Contingent section ───────────────────────────────────
-                  if (_showContingent) ...[
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Row(children: [
-                        Expanded(
-                          child: Text('Contingent Bill',
-                              style: Theme.of(context).textTheme.titleMedium),
-                        ),
-                        if (_isEditing)
-                          IconButton(
-                            icon: const Icon(Icons.close, color: Colors.red),
-                            onPressed: _removeContingentSection,
-                          ),
-                      ]),
-                    ),
-                    const SizedBox(height: 8),
-                    _buildContingentTable(),
-                    const SizedBox(height: 12),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Text(
-                        'Contingent Total: Rs. ${_grandContingentTotal.toStringAsFixed(2)}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ],
-
-                  if (_isEditing && !_showContingent)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: OutlinedButton.icon(
-                        onPressed: _addContingentSection,
-                        icon: const Icon(Icons.add),
-                        label: const Text('Add Contingent'),
-                      ),
-                    ),
-
-                  const SizedBox(height: 24),
+                  // Extra breathing room so this section sits clearly below
+                  // the trip details before the Preview button.
+                  const SizedBox(height: 28),
                 ],
               ),
             ),
@@ -412,59 +585,69 @@ class _TaFormScreenState extends State<TaFormScreen> {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 12),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primary.withOpacity(0.10),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                  color: theme.colorScheme.primary.withOpacity(0.3),
-                  width: 1.2),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.alt_route,
-                    size: 18, color: theme.colorScheme.primary),
-                const SizedBox(width: 8),
-                Text(
-                  'Trip ${tripIndex + 1}',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                    color: theme.colorScheme.primary,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 12),
+        padding: const EdgeInsets.fromLTRB(0, 10, 0, 10),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primary.withOpacity(0.02),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+              color: theme.colorScheme.primary.withOpacity(0.14), width: 1),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              margin: const EdgeInsets.fromLTRB(10, 0, 10, 0),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: theme.colorScheme.primary.withOpacity(0.3),
+                    width: 1.2),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.alt_route,
+                      size: 18, color: theme.colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Trip ${tripIndex + 1} Details',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                      color: theme.colorScheme.primary,
+                    ),
                   ),
-                ),
-                const Spacer(),
-                if (_isEditing && _trips.length > 1)
-                  GestureDetector(
-                    onTap: () => _removeTrip(tripIndex),
-                    child:
-                        const Icon(Icons.cancel, color: Colors.red, size: 20),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          _buildTripTable(tripIndex, trip),
-          if (_isEditing)
-            Padding(
-              padding: const EdgeInsets.only(left: 12, top: 6),
-              child: TextButton.icon(
-                onPressed: () => _addLeg(tripIndex),
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('Add Row'),
-                style: TextButton.styleFrom(
-                  foregroundColor:
-                      theme.colorScheme.onSurface.withOpacity(0.7),
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                ),
+                  const Spacer(),
+                  if (_isEditing && _trips.length > 1)
+                    GestureDetector(
+                      onTap: () => _removeTrip(tripIndex),
+                      child: const Icon(Icons.cancel,
+                          color: Colors.red, size: 20),
+                    ),
+                ],
               ),
             ),
-        ],
+            const SizedBox(height: 8),
+            _buildTripTable(tripIndex, trip),
+            if (_isEditing)
+              Padding(
+                padding: const EdgeInsets.only(left: 22, top: 6),
+                child: TextButton.icon(
+                  onPressed: () => _addLeg(tripIndex),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Add Row'),
+                  style: TextButton.styleFrom(
+                    foregroundColor:
+                        theme.colorScheme.onSurface.withOpacity(0.7),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -481,6 +664,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
+      controller: tripIndex == 0 ? _firstTableScrollController : null,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -798,6 +982,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
               label: 'From',
               enabled: _isEditing,
               isSuggested: leg.fromIsSuggested,
+              hintText: 'From',
               onChanged: (v) => _updateLeg(tripIndex, legIndex,
                   (r) => r.copyWith(fromLocation: v, fromIsSuggested: false)),
             ),
@@ -807,6 +992,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
               label: 'To',
               enabled: _isEditing,
               isSuggested: leg.toIsSuggested,
+              hintText: 'To',
               onChanged: (v) => _updateLeg(tripIndex, legIndex,
                   (r) => r.copyWith(toLocation: v, toIsSuggested: false)),
             ),
@@ -818,6 +1004,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
               label: 'Kilometre',
               enabled: _isEditing,
               keyboardType: TextInputType.number,
+              hintText: 'Km',
               onChanged: (v) => _updateLeg(tripIndex, legIndex,
                   (r) => r.copyWith(distanceKm: double.tryParse(v) ?? 0)),
             ),
@@ -899,6 +1086,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
               value: entry.fromLocation,
               label: 'From',
               enabled: _isEditing,
+              hintText: 'From',
               onChanged: (v) =>
                   _updateContingent(i, (e) => e.copyWith(fromLocation: v))),
           EditableTextCell(
@@ -906,6 +1094,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
               value: entry.toLocation,
               label: 'To',
               enabled: _isEditing,
+              hintText: 'To',
               onChanged: (v) =>
                   _updateContingent(i, (e) => e.copyWith(toLocation: v))),
           EditableTextCell(
@@ -916,6 +1105,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
             label: 'Kilometre',
             enabled: _isEditing,
             keyboardType: TextInputType.number,
+            hintText: 'Km',
             onChanged: (v) => _updateContingent(
                 i, (e) => e.copyWith(distanceKm: double.tryParse(v) ?? 0)),
           ),
@@ -925,6 +1115,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
             label: 'Amount',
             enabled: _isEditing,
             keyboardType: TextInputType.number,
+            hintText: 'Rs.',
             onChanged: (v) => _updateContingent(
                 i, (e) => e.copyWith(amount: double.tryParse(v) ?? 0)),
           ),
@@ -1013,36 +1204,24 @@ class _TaFormScreenState extends State<TaFormScreen> {
                   ),
                 ),
               )
-            : Row(
-                children: [
-                  Expanded(
-                    child: SizedBox(
-                      height: 48,
-                      child: OutlinedButton.icon(
-                        onPressed: _isEditing
-                            ? null
-                            : () => setState(() => _isEditing = true),
-                        icon: const Icon(Icons.edit),
-                        label: const Text('Edit'),
-                      ),
-                    ),
+            : SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  onPressed: _isSaving ? null : _openPreview,
+                  icon: _isSaving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.visibility_outlined),
+                  label: Text(_isSaving ? 'Preparing...' : 'Preview'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.shade700,
+                    foregroundColor: Colors.white,
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: SizedBox(
-                      height: 48,
-                      child: ElevatedButton.icon(
-                        onPressed: _confirmFinal,
-                        icon: const Icon(Icons.check_circle_outline),
-                        label: const Text('Final'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green.shade700,
-                          foregroundColor: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
       ),
     );
