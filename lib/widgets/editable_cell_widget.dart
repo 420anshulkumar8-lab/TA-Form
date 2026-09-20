@@ -114,6 +114,10 @@ class EditableTextCell extends StatelessWidget {
   final ValueChanged<String> onChanged;
   final TextInputType? keyboardType;
 
+  /// Shown (very lightly) in place of the value when empty, e.g. "Train No."
+  /// — a format example, never mistakable for real filled-in data.
+  final String? hintText;
+
   const EditableTextCell({
     super.key,
     required this.width,
@@ -123,6 +127,7 @@ class EditableTextCell extends StatelessWidget {
     required this.onChanged,
     this.isSuggested = false,
     this.keyboardType,
+    this.hintText,
   });
 
   Future<void> _edit(BuildContext context) async {
@@ -156,16 +161,24 @@ class EditableTextCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showHint = value.isEmpty && hintText != null;
     return _CellShell(
       width: width,
       enabled: enabled,
       isSuggested: isSuggested && value.isNotEmpty,
       onTap: () => _edit(context),
       child: Text(
-        value.isEmpty ? '—' : value,
+        showHint ? hintText! : (value.isEmpty ? '—' : value),
         overflow: TextOverflow.ellipsis,
-        style: _valueStyle(context,
-            isSuggested: isSuggested && value.isNotEmpty, isEmpty: value.isEmpty),
+        style: showHint
+            ? TextStyle(
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.28),
+                fontStyle: FontStyle.italic,
+                fontSize: 11.5,
+              )
+            : _valueStyle(context,
+                isSuggested: isSuggested && value.isNotEmpty,
+                isEmpty: value.isEmpty),
       ),
     );
   }
@@ -220,15 +233,22 @@ class EditableDateCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showHint = value.isEmpty;
     return _CellShell(
       width: width,
       enabled: enabled,
       isSuggested: isSuggested && value.isNotEmpty,
       onTap: () => _pick(context),
       child: Text(
-        value.isEmpty ? '—' : value,
-        style: _valueStyle(context,
-            isSuggested: isSuggested && value.isNotEmpty, isEmpty: value.isEmpty),
+        showHint ? 'DD/MM' : value,
+        style: showHint
+            ? TextStyle(
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.28),
+                fontStyle: FontStyle.italic,
+                fontSize: 11.5,
+              )
+            : _valueStyle(context,
+                isSuggested: isSuggested && value.isNotEmpty, isEmpty: value.isEmpty),
       ),
     );
   }
@@ -279,13 +299,20 @@ class EditableTimeCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showHint = value.isEmpty;
     return _CellShell(
       width: width,
       enabled: enabled,
       onTap: () => _pick(context),
       child: Text(
-        value.isEmpty ? '—' : value,
-        style: TextStyle(color: value.isEmpty ? Colors.grey : null),
+        showHint ? 'HH:MM' : value,
+        style: showHint
+            ? TextStyle(
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.28),
+                fontStyle: FontStyle.italic,
+                fontSize: 11.5,
+              )
+            : const TextStyle(),
       ),
     );
   }
@@ -490,9 +517,15 @@ class EditableVehicleCell extends StatelessWidget {
       enabled: enabled,
       onTap: () => _pick(context),
       child: Text(
-        value.isEmpty ? '—' : value,
+        value.isEmpty ? 'Train/Veh No.' : value,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: value.isEmpty ? Colors.grey : null),
+        style: value.isEmpty
+            ? TextStyle(
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.28),
+                fontStyle: FontStyle.italic,
+                fontSize: 11.5,
+              )
+            : const TextStyle(),
       ),
     );
   }
@@ -543,13 +576,20 @@ class EditableDayNightCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showHint = value.isEmpty;
     return _CellShell(
       width: width,
       enabled: enabled,
       onTap: () => _pick(context),
       child: Text(
-        value.isEmpty ? '—' : value,
-        style: TextStyle(color: value.isEmpty ? Colors.grey : null),
+        showHint ? 'Day/Night' : value,
+        style: showHint
+            ? TextStyle(
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.28),
+                fontStyle: FontStyle.italic,
+                fontSize: 11.5,
+              )
+            : const TextStyle(),
       ),
     );
   }
