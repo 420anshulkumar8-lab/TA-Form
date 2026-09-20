@@ -268,8 +268,27 @@ class PdfService {
       final leg = flat.leg;
 
       if (leg.vehicleEntryType == VehicleEntryType.halt) {
-        // ── Halt row: only Date + centred "Halt at X" across middle columns
+        // ── Halt row: Date stays normal; a single dashed line runs from
+        // Train/Veh No. through to Day/Night (spanning all the columns that
+        // don't apply to a halt), with "Halt at X" centered on top of it.
         widgets.add(_overlayText(leg.date, FormLayout.dateX, y, fontSize));
+
+        final dashLineWidth =
+            (FormLayout.dayNightX + 28) - FormLayout.vehicleX;
+        widgets.add(pw.Positioned(
+          left: FormLayout.vehicleX,
+          top: y + (fontSize * 0.9),
+          child: pw.SizedBox(
+            width: dashLineWidth,
+            child: pw.Text(
+              '-' * (dashLineWidth / (fontSize * 0.52)).round(),
+              style: pw.TextStyle(font: pw.Font.courier(), fontSize: fontSize),
+              overflow: pw.TextOverflow.clip,
+              maxLines: 1,
+            ),
+          ),
+        ));
+
         final haltText = leg.vehicleNumber.isEmpty
             ? 'Halt'
             : 'Halt at ${leg.vehicleNumber}';
@@ -335,6 +354,29 @@ class PdfService {
 
       if (date.isNotEmpty) {
         final amt = _splitAmount(flatLegs[i].amount);
+
+        // Curly-bracket connector only drawn when this date spans more than
+        // 1 row on this page — a single-row date just gets plain centered
+        // text, matching how Purpose's bracket behaves.
+        if (legCountOnThisPage > 1) {
+          widgets.add(pw.Positioned(
+            left: FormLayout.amountRsX - 10,
+            top: blockTopY,
+            child: pw.SizedBox(
+              height: blockHeight,
+              child: pw.Center(
+                child: pw.Text(
+                  '}',
+                  style: pw.TextStyle(
+                    font: pw.Font.courier(),
+                    fontSize: fontSize + (legCountOnThisPage * 2),
+                  ),
+                ),
+              ),
+            ),
+          ));
+        }
+
         widgets.add(pw.Positioned(
           left: FormLayout.amountRsX,
           top: blockTopY,
