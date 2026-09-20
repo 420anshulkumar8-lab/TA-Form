@@ -41,8 +41,8 @@ class FormLayout {
   // ════════════════════════════════════════════════════════════════════════
 
   // Row: "शाखा/Branch ____  मंडल/जिला/Division/District ____  सदर मुकाम/HQ ____"
-  static const double branchDivisionHqY = 64.2;
-  static const double branchX = 90.0;
+  static const double branchDivisionHqY = 80.0;
+  static const double branchX = 105.0;
   static const double divisionX = 264.8;
   static const double headquartersX = 474.5;
 
