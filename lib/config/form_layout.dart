@@ -41,26 +41,26 @@ class FormLayout {
   // ════════════════════════════════════════════════════════════════════════
 
   // Row: "शाखा/Branch ____  मंडल/जिला/Division/District ____  सदर मुकाम/HQ ____"
-  static const double branchDivisionHqY = 84.0;
-  static const double branchX = 58.0;
-  static const double divisionX = 238.0;
-  static const double headquartersX = 475.0;
+  static const double branchDivisionHqY = 64.2;
+  static const double branchX = 90.0;
+  static const double divisionX = 264.8;
+  static const double headquartersX = 474.5;
 
   // Row: "...performed by Shri ____ for which allowance ____ 20__ is claimed"
-  static const double shriRowY = 118.0;
-  static const double employeeNameX = 166.0; // employee's name
-  static const double monthX = 338.0; // month name (e.g. "June")
-  static const double yearX = 454.0; // last 2 digits of year
+  static const double shriRowY = 94.3;
+  static const double employeeNameX = 172.4; // employee's name
+  static const double monthX = 399.8; // month name (e.g. "June")
+  static const double yearX = 456.7; // last 2 digits of year
 
   // Row: "पद/Designation ____ वेतन/Pay ____ नियुक्ति की तारीख/Date of appointment ____"
-  static const double designationRowY = 134.0;
-  static const double designationX = 96.0;
-  static const double payX = 245.0;
-  static const double dateOfAppointmentX = 485.0;
+  static const double designationRowY = 113.2;
+  static const double designationX = 93.8;
+  static const double payX = 245.4;
+  static const double dateOfAppointmentX = 439.1;
 
   // Row: "किस नियम से शासित/Rule by which governed ____"
-  static const double ruleY = 150.0;
-  static const double ruleX = 200.0;
+  static const double ruleY = 127.8;
+  static const double ruleX = 212.2;
 
   // ════════════════════════════════════════════════════════════════════════
   // PAGE 1 — TA Table (9 columns; col-5 splits From|To, col-9 splits Rs|Paise)
