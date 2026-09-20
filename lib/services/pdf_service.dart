@@ -230,7 +230,7 @@ class PdfService {
 
     return [
       _overlayText(profile.department, FormLayout.branchX,
-          FormLayout.branchDivisionHqY, FormLayout.fontSizeNormal),
+          FormLayout.branchDivisionHqY, 9.0),
       _overlayText(profile.division, FormLayout.divisionX,
           FormLayout.branchDivisionHqY, FormLayout.fontSizeNormal),
       _overlayText(profile.headquarter, FormLayout.headquartersX,
@@ -519,6 +519,7 @@ class PdfService {
     double y,
     double fontSize, {
     bool bold = false,
+    pw.Font? font,
   }) {
     return pw.Positioned(
       left: x,
@@ -526,7 +527,7 @@ class PdfService {
       child: pw.Text(
         text,
         style: pw.TextStyle(
-          font: bold ? pw.Font.courierBold() : pw.Font.courier(),
+          font: font ?? (bold ? pw.Font.courierBold() : pw.Font.courier()),
           fontSize: fontSize,
         ),
       ),
