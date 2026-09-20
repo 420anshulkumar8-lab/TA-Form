@@ -689,31 +689,63 @@ class _TaFormScreenState extends State<TaFormScreen> {
     );
   }
 
-  /// Builds the leg rows for one trip, grouping consecutive same-date legs
-  /// so the Amount cell can span them.
+  /// Builds all rows for one trip. The layout is split into three
+  /// INDEPENDENT columns side by side, so merging in one never affects
+  /// the others:
+  ///   1. Left cells (Date→DayNight) — grouped into same-date blocks only
+  ///      so the Amount block heights line up.
+  ///   2. Purpose — ALWAYS one single merged box spanning the entire trip
+  ///      (every leg in this trip), regardless of how many different dates
+  ///      appear in the trip.
+  ///   3. Amount — merged per date (across all trips), independent of
+  ///      Purpose and independent of trip boundaries.
   Widget _buildTripRows(int tripIndex, TripGroup trip, int level) {
     final legs = trip.legs;
 
-    // Identify contiguous same-date runs WITHIN this trip
-    // We'll use IntrinsicHeight + Rows to handle the vertical spanning
-    final rows = <Widget>[];
+    // Identify contiguous same-date runs WITHIN this trip (used only to
+    // size/position the Amount column's merge blocks).
+    final leftAndAmountBlocks = <({Widget left, Widget right})>[];
     int i = 0;
     while (i < legs.length) {
       final date = legs[i].date;
-      // Count how many consecutive legs in this trip share the same date
       int j = i + 1;
       while (j < legs.length && legs[j].date == date) j++;
       final sameCount = j - i;
-
-      // Build those legs as a block with merged Amount
-      rows.add(_buildDateBlock(
-          tripIndex, trip, i, sameCount, date, level));
+      leftAndAmountBlocks.add(
+          _buildDateBlock(tripIndex, trip, i, sameCount, date, level));
       i = j;
     }
-    return Column(children: rows);
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Left cells (Date→DayNight), grouped into same-date blocks.
+          Column(children: leftAndAmountBlocks.map((b) => b.left).toList()),
+          // Purpose — always ONE box for the whole trip, independent of
+          // how many date-blocks the left/Amount columns were split into.
+          // Rendered here (matching the header's Date..DayNight→Purpose
+          // order) rather than after Amount.
+          MergedPurposeCellWidget(
+            width: _colPurpose,
+            rowHeight: _rowHeight,
+            legCount: legs.length,
+            purpose: trip.purpose,
+            enabled: _isEditing,
+            onChanged: (v) => _updateTripPurpose(tripIndex, v),
+          ),
+          // Amount (+ action buttons), grouped into same-date blocks.
+          Column(children: leftAndAmountBlocks.map((b) => b.right).toList()),
+        ],
+      ),
+    );
   }
 
-  Widget _buildDateBlock(
+  /// Builds one same-date block's LEFT half (Date→DayNight cells) and RIGHT
+  /// half (Amount + delete-action) separately, so the caller can place the
+  /// Purpose column between them (matching the header's column order)
+  /// without it being tied to date-block boundaries.
+  ({Widget left, Widget right}) _buildDateBlock(
     int tripIndex,
     TripGroup trip,
     int startLegIndex,
@@ -734,102 +766,87 @@ class _TaFormScreenState extends State<TaFormScreen> {
     // render the merged cell on the first trip/block where this date starts)
     final isFirstOccurrence = _isFirstTripWithDate(tripIndex, date);
 
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Left block: all per-leg cells (Date→DayNight) + Purpose merged
+    final left = Column(
+      children: [
+        for (int k = startLegIndex; k < startLegIndex + legCount; k++)
+          SizedBox(
+            height: _rowHeight,
+            child: _buildLegLeftCells(tripIndex, k, legs[k]),
+          ),
+      ],
+    );
+
+    final right = Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Amount — merged per date, only rendered by first trip that has this date
+        if (isFirstOccurrence && date.isNotEmpty)
+          MergedAmountCellWidget(
+            width: _colAmount,
+            rowHeight: _rowHeight,
+            rowCount: totalRowsOnDate,
+            amount: _dateAmounts[date] ?? 0.0,
+            employeeLevel: level,
+            enabled: _isEditing,
+            onChanged: (v) => _setDateAmount(date, v),
+          )
+        else if (!isFirstOccurrence && date.isNotEmpty)
+          // Filler: this trip's legs on this date are "covered" by the
+          // merged Amount cell rendered by the first trip
+          SizedBox(width: _colAmount, height: _rowHeight * legCount)
+        else
+          // No date set yet — show plain empty cell per leg
+          Column(
+            children: List.generate(
+              legCount,
+              (_) => SizedBox(
+                width: _colAmount,
+                height: _rowHeight,
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border(
+                      right: BorderSide(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .outline
+                              .withOpacity(0.25)),
+                    ),
+                  ),
+                  alignment: Alignment.center,
+                  child:
+                      const Text('—', style: TextStyle(color: Colors.grey)),
+                ),
+              ),
+            ),
+          ),
+        // Action buttons (delete row), one per leg
+        if (_isEditing)
           Column(
             children: [
               for (int k = startLegIndex; k < startLegIndex + legCount; k++)
                 SizedBox(
+                  width: _colAction,
                   height: _rowHeight,
-                  child: _buildLegLeftCells(tripIndex, k, legs[k]),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      icon: const Icon(Icons.cancel,
+                          color: Colors.red, size: 20),
+                      onPressed: trip.legs.length > 1
+                          ? () => _removeLeg(tripIndex, k)
+                          : null,
+                    ),
+                  ),
                 ),
             ],
           ),
-          // Purpose — merged across all legs of this trip (rendered once per trip)
-          if (startLegIndex == 0)
-            MergedPurposeCellWidget(
-              width: _colPurpose,
-              rowHeight: _rowHeight,
-              legCount: trip.legs.length,
-              purpose: trip.purpose,
-              enabled: _isEditing,
-              onChanged: (v) => _updateTripPurpose(tripIndex, v),
-            )
-          else
-            // Filler for Purpose column for non-first date blocks in same trip
-            SizedBox(
-              width: _colPurpose,
-              height: _rowHeight * legCount,
-            ),
-          // Amount — merged per date, only rendered by first trip that has this date
-          if (isFirstOccurrence && date.isNotEmpty)
-            MergedAmountCellWidget(
-              width: _colAmount,
-              rowHeight: _rowHeight,
-              rowCount: totalRowsOnDate,
-              amount: _dateAmounts[date] ?? 0.0,
-              employeeLevel: level,
-              enabled: _isEditing,
-              onChanged: (v) => _setDateAmount(date, v),
-            )
-          else if (!isFirstOccurrence && date.isNotEmpty)
-            // Filler: this trip's legs on this date are "covered" by the
-            // merged Amount cell rendered by the first trip
-            SizedBox(width: _colAmount, height: _rowHeight * legCount)
-          else
-            // No date set yet — show plain empty cell per leg
-            Column(
-              children: List.generate(
-                legCount,
-                (_) => SizedBox(
-                  width: _colAmount,
-                  height: _rowHeight,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      border: Border(
-                        right: BorderSide(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .outline
-                                .withOpacity(0.25)),
-                      ),
-                    ),
-                    alignment: Alignment.center,
-                    child: const Text('—',
-                        style: TextStyle(color: Colors.grey)),
-                  ),
-                ),
-              ),
-            ),
-          // Action buttons (delete row), one per leg
-          if (_isEditing)
-            Column(
-              children: [
-                for (int k = startLegIndex; k < startLegIndex + legCount; k++)
-                  SizedBox(
-                    width: _colAction,
-                    height: _rowHeight,
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: IconButton(
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        icon: const Icon(Icons.cancel,
-                            color: Colors.red, size: 20),
-                        onPressed: trip.legs.length > 1
-                            ? () => _removeLeg(tripIndex, k)
-                            : null,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-        ],
-      ),
+      ],
     );
+
+    return (left: left, right: right);
   }
 
   /// Returns true if tripIndex is the FIRST trip in _trips that has any leg
