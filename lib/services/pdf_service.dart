@@ -145,6 +145,7 @@ class PdfService {
             ..._headerOverlay(profile, session),
             ..._legRows(page1Legs, rowHeight, fontSize, FormLayout.firstRowY),
             ..._purposeOverlay(page1Legs, rowHeight, fontSize, FormLayout.firstRowY),
+            ..._amountOverlay(page1Legs, rowHeight, fontSize, FormLayout.firstRowY),
             if (!taEndsOnPage2 && taData != null)
               ..._totalOverlay(taData, taEndY, fontSize),
             if (contingentOnPage1 && contingentData != null)
@@ -171,6 +172,7 @@ class PdfService {
               ),
             ..._legRows(page2Legs, rowHeight, fontSize, FormLayout.firstRowY2),
             ..._purposeOverlay(page2Legs, rowHeight, fontSize, FormLayout.firstRowY2),
+            ..._amountOverlay(page2Legs, rowHeight, fontSize, FormLayout.firstRowY2),
             if (taEndsOnPage2 && taData != null)
               ..._totalOverlay(taData, taEndY, fontSize),
             if (!contingentOnPage1 && contingentData != null)
@@ -261,7 +263,6 @@ class PdfService {
   ) {
     final widgets = <pw.Widget>[];
     double y = startY;
-    final seenDates = <String>{};
 
     for (final flat in flatLegs) {
       final leg = flat.leg;
@@ -294,15 +295,75 @@ class PdfService {
         widgets.add(_overlayText(leg.dayNight, FormLayout.dayNightX, y, fontSize));
       }
 
-      // Amount: print only on first occurrence of this date (date-merged)
-      if (leg.date.isNotEmpty && !seenDates.contains(leg.date)) {
-        seenDates.add(leg.date);
-        final amt = _splitAmount(flat.amount);
-        widgets.add(_overlayText(amt.rupees, FormLayout.amountRsX, y, fontSize));
-        widgets.add(_overlayText(amt.paise, FormLayout.amountPaiseX, y, fontSize));
+      y += rowHeight;
+    }
+
+    return widgets;
+  }
+
+  // ── Amount column — one merged entry per DATE (not per trip), vertically
+  //    centered across every row that shares that date, even when those
+  //    rows belong to different trips and are adjacent only because one
+  //    trip's last leg and the next trip's first leg happen to share a
+  //    date (e.g. Trip 1 ends 2-Mar, Trip 2 starts 2-Mar → one merged
+  //    Amount box spanning both rows, centered on the combined block).
+  //    Mirrors _purposeOverlay's centering approach but groups by date
+  //    instead of by trip. Only legs present on THIS page are considered,
+  //    since a merge can't visually span two separate PDF pages. ──────────
+  static List<pw.Widget> _amountOverlay(
+    List<_FlatLeg> flatLegs,
+    double rowHeight,
+    double fontSize,
+    double startY,
+  ) {
+    final widgets = <pw.Widget>[];
+    if (flatLegs.isEmpty) return widgets;
+
+    int i = 0;
+    while (i < flatLegs.length) {
+      final date = flatLegs[i].leg.date;
+
+      // Find the contiguous run of legs (within this page) sharing this
+      // date, regardless of which trip they belong to.
+      int j = i;
+      while (j < flatLegs.length && flatLegs[j].leg.date == date) {
+        j++;
+      }
+      final legCountOnThisPage = j - i;
+      final blockTopY = startY + i * rowHeight;
+      final blockHeight = legCountOnThisPage * rowHeight;
+
+      if (date.isNotEmpty) {
+        final amt = _splitAmount(flatLegs[i].amount);
+        widgets.add(pw.Positioned(
+          left: FormLayout.amountRsX,
+          top: blockTopY,
+          child: pw.SizedBox(
+            height: blockHeight,
+            child: pw.Center(
+              child: pw.Text(
+                amt.rupees,
+                style: pw.TextStyle(font: pw.Font.courier(), fontSize: fontSize),
+              ),
+            ),
+          ),
+        ));
+        widgets.add(pw.Positioned(
+          left: FormLayout.amountPaiseX,
+          top: blockTopY,
+          child: pw.SizedBox(
+            height: blockHeight,
+            child: pw.Center(
+              child: pw.Text(
+                amt.paise,
+                style: pw.TextStyle(font: pw.Font.courier(), fontSize: fontSize),
+              ),
+            ),
+          ),
+        ));
       }
 
-      y += rowHeight;
+      i = j;
     }
 
     return widgets;
