@@ -41,51 +41,51 @@ class FormLayout {
   // ════════════════════════════════════════════════════════════════════════
 
   // Row: "शाखा/Branch ____  मंडल/जिला/Division/District ____  सदर मुकाम/HQ ____"
-  static const double branchDivisionHqY = 80.0;
-  static const double branchX = 105.0;
-  static const double divisionX = 264.8;
-  static const double headquartersX = 474.5;
+  static const double branchDivisionHqY = 77.3;
+  static const double branchX = 120.4;
+  static const double divisionX = 292.9;
+  static const double headquartersX = 476.7;
 
   // Row: "...performed by Shri ____ for which allowance ____ 20__ is claimed"
-  static const double shriRowY = 94.3;
-  static const double employeeNameX = 172.4; // employee's name
-  static const double monthX = 399.8; // month name (e.g. "June")
-  static const double yearX = 456.7; // last 2 digits of year
+  static const double shriRowY = 112.2;
+  static const double employeeNameX = 209.8; // employee's name
+  static const double monthX = 418.0; // month name (e.g. "June")
+  static const double yearX = 454.0; // last 2 digits of year
 
   // Row: "पद/Designation ____ वेतन/Pay ____ नियुक्ति की तारीख/Date of appointment ____"
-  static const double designationRowY = 113.2;
-  static const double designationX = 93.8;
-  static const double payX = 245.4;
-  static const double dateOfAppointmentX = 439.1;
+  static const double designationRowY = 126.9;
+  static const double designationX = 111.7;
+  static const double payX = 255.7;
+  static const double dateOfAppointmentX = 468.7;
 
   // Row: "किस नियम से शासित/Rule by which governed ____"
-  static const double ruleY = 127.8;
-  static const double ruleX = 212.2;
+  static const double ruleY = 142.6;
+  static const double ruleX = 233.1;
 
   // ════════════════════════════════════════════════════════════════════════
   // PAGE 1 — TA Table (9 columns; col-5 splits From|To, col-9 splits Rs|Paise)
   // ════════════════════════════════════════════════════════════════════════
-  static const double dateX = 38.0; // 1. महीना और तारीख / Month & date
-  static const double vehicleX = 93.0; // 2. गाड़ी नं. / No. of Train
+  static const double dateX = 33.2; // 1. महीना और तारीख / Month & date
+  static const double vehicleX = 93.9; // 2. गाड़ी नं. / No. of Train
   static const double departureX = 128.0; // 3. प्रस्थान का समय / Time left
-  static const double arrivalX = 162.0; // 4. पहुंचने का समय / Time arrived
-  static const double fromX = 198.0; // 5a. से/From
-  static const double toX = 261.0; // 5b. तक/To
-  static const double kmX = 320.0; // 6. किलोमीटर / Kilometre
-  static const double dayNightX = 359.0; // 7. दिन/रात / Day-Night
-  static const double purposeX = 392.0; // 8. यात्रा का उद्देश्य / Object of Journey
+  static const double arrivalX = 162.6; // 4. पहुंचने का समय / Time arrived
+  static const double fromX = 202.4; // 5a. से/From
+  static const double toX = 271.8; // 5b. तक/To
+  static const double kmX = 327.3; // 6. किलोमीटर / Kilometre
+  static const double dayNightX = 364.3; // 7. दिन/रात / Day-Night
+  static const double purposeX = 390.9; // 8. यात्रा का उद्देश्य / Object of Journey
   static const double purposeWidth = 78.0; // width of column 8 (for text wrap)
-  static const double amountRsX = 474.0; // 9a. रुपये/Rs.
-  static const double amountPaiseX = 510.0; // 9b. पैसे/Paise
+  static const double amountRsX = 480.6; // 9a. रुपये/Rs.
+  static const double amountPaiseX = 514.8; // 9b. पैसे/Paise
 
   // Table body Y-bounds on page 1
-  static const double firstRowY = 234.0; // top of first data row
+  static const double firstRowY = 237.2; // top of first data row
   static const double tableBottomY1 = 705.0; // table's bottom border
 
   // ════════════════════════════════════════════════════════════════════════
   // PAGE 2 — Continuation table (same column X positions as page 1)
   // ════════════════════════════════════════════════════════════════════════
-  static const double firstRowY2 = 70.0; // top of first data row
+  static const double firstRowY2 = 77.0; // top of first data row
   static const double tableBottomY2 = 372.0; // table's bottom border
 
   // "मैं प्रमाणित करता हूँ कि श्री ____ बिल में दिये गये समय के लिए..."
