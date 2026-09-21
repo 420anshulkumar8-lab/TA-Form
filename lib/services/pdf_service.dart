@@ -86,13 +86,61 @@ class PdfService {
         taData?.trips ?? <TripGroup>[],
         taData?.dateAmounts ?? <String, double>{});
 
+    // ── TEST: pre-pass to compute how much extra height (if any) each
+    //    DYNAMIC-mode trip's Purpose needs beyond its normal merged-rows
+    //    height, so that trip's full text is never clipped. This extra
+    //    height is injected as a gap AFTER that trip's last row, pushing
+    //    every subsequent row down. CLIP-mode trips contribute 0 extra —
+    //    their Purpose stays clipped to the normal block height instead.
+    //    _extraHeightAfterRow[k] = extra gap inserted immediately after
+    //    row k finishes (0.0 if none).
+    final extraHeightAfterRow = <int, double>{};
+    {
+      int i = 0;
+      while (i < flatLegs.length) {
+        final tripIndex = flatLegs[i].tripIndex;
+        int j = i;
+        while (j < flatLegs.length && flatLegs[j].tripIndex == tripIndex) {
+          j++;
+        }
+        // Normal (non-extended) height this trip's rows occupy.
+        double normalHeight = 0;
+        for (int k = i; k < j; k++) {
+          normalHeight += _testRowHeightForRow(k);
+        }
+        if (_isDynamicModeForTrip(tripIndex)) {
+          final purpose = flatLegs[i].purpose;
+          final tripFontSize = _testFontSizeForRow(i);
+          final extra = _dynamicExtraHeightForPurpose(
+              purpose, normalHeight, tripFontSize);
+          if (extra > 0) {
+            extraHeightAfterRow[j - 1] = extra;
+          }
+        }
+        i = j;
+      }
+    }
+
+    /// Cumulative Y for `rowIndex`, accounting for both each row's own
+    /// (possibly-per-block-varying) height AND any dynamic-mode extra gaps
+    /// injected after earlier rows.
+    double cumulativeYWithGaps(double startY, int rowIndex) {
+      double y = startY;
+      for (int k = 0; k < rowIndex; k++) {
+        y += _testRowHeightForRow(k);
+        y += extraHeightAfterRow[k] ?? 0.0;
+      }
+      return y;
+    }
+
     // ── Decide row height / font size for the WHOLE TA table, then split
     //    legs between page 1 and page 2 based on how many fit on page 1. ───
-    // TEST MODE: row height/font size now vary per-row (see the 7 blocks
+    // TEST MODE: row height/font size now vary per-row (see the blocks
     // defined near _legRows), so page-1 capacity is computed by walking
-    // cumulative heights instead of a single uniform rowHeight. `rowHeight`
-    // and `fontSize` below are kept only as fallback values passed into
-    // helper signatures that still expect a default.
+    // cumulative heights (including dynamic-mode gaps) instead of a single
+    // uniform rowHeight. `rowHeight` and `fontSize` below are kept only as
+    // fallback values passed into helper signatures that still expect a
+    // default.
     const rowHeight = 24.0; // unused fallback while test blocks are active
     const fontSize = 9.0; // unused fallback while test blocks are active
 
@@ -103,6 +151,7 @@ class PdfService {
         final h = _testRowHeightForRow(page1Cap);
         if (y + h > FormLayout.tableBottomY1) break;
         y += h;
+        y += extraHeightAfterRow[page1Cap] ?? 0.0;
         page1Cap++;
       }
     }
@@ -125,10 +174,11 @@ class PdfService {
       double h2 = 0;
       for (int k = page1Cap; k < flatLegs.length; k++) {
         h2 += _testRowHeightForRow(k);
+        h2 += extraHeightAfterRow[k] ?? 0.0;
       }
       taEndY = FormLayout.firstRowY2 + h2 + 4;
     } else {
-      taEndY = _testCumulativeY(FormLayout.firstRowY, page1Legs.length) + 4;
+      taEndY = cumulativeYWithGaps(FormLayout.firstRowY, page1Legs.length) + 4;
     }
 
     // ── Contingent sizing ──────────────────────────────────────────────────
@@ -170,9 +220,12 @@ class PdfService {
                 child: pw.Image(pw.MemoryImage(bg1), fit: pw.BoxFit.fill),
               ),
             ..._headerOverlay(profile, session),
-            ..._legRows(page1Legs, rowHeight, fontSize, FormLayout.firstRowY),
-            ..._purposeOverlay(page1Legs, rowHeight, fontSize, FormLayout.firstRowY),
-            ..._amountOverlay(page1Legs, rowHeight, fontSize, FormLayout.firstRowY),
+            ..._legRows(page1Legs, rowHeight, fontSize, FormLayout.firstRowY,
+                extraHeightAfterRow: extraHeightAfterRow),
+            ..._purposeOverlay(page1Legs, rowHeight, fontSize, FormLayout.firstRowY,
+                extraHeightAfterRow: extraHeightAfterRow),
+            ..._amountOverlay(page1Legs, rowHeight, fontSize, FormLayout.firstRowY,
+                extraHeightAfterRow: extraHeightAfterRow),
             if (!taEndsOnPage2 && taData != null)
               ..._totalOverlay(taData, taEndY, fontSize),
             if (contingentOnPage1 && contingentData != null)
@@ -197,9 +250,12 @@ class PdfService {
               pw.Positioned.fill(
                 child: pw.Image(pw.MemoryImage(bg2), fit: pw.BoxFit.fill),
               ),
-            ..._legRows(page2Legs, rowHeight, fontSize, FormLayout.firstRowY2),
-            ..._purposeOverlay(page2Legs, rowHeight, fontSize, FormLayout.firstRowY2),
-            ..._amountOverlay(page2Legs, rowHeight, fontSize, FormLayout.firstRowY2),
+            ..._legRows(page2Legs, rowHeight, fontSize, FormLayout.firstRowY2,
+                rowOffset: page1Cap, extraHeightAfterRow: extraHeightAfterRow),
+            ..._purposeOverlay(page2Legs, rowHeight, fontSize, FormLayout.firstRowY2,
+                rowOffset: page1Cap, extraHeightAfterRow: extraHeightAfterRow),
+            ..._amountOverlay(page2Legs, rowHeight, fontSize, FormLayout.firstRowY2,
+                rowOffset: page1Cap, extraHeightAfterRow: extraHeightAfterRow),
             if (taEndsOnPage2 && taData != null)
               ..._totalOverlay(taData, taEndY, fontSize),
             if (!contingentOnPage1 && contingentData != null)
@@ -297,33 +353,30 @@ class PdfService {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // TEMP CALIBRATION TEST — replaces the old entry-count-based dynamic
-  // font/row-height scaling. Instead, the TA table is split into 7 blocks
-  // of 3 rows each, each block pinned to a different font size + row height
-  // combination, so a single printed form shows all 7 side by side for
-  // comparison. Once you've picked a winner, tell me which block number
-  // looked best and I'll set FormLayout's font/rowHeight back to one fixed
-  // pair (removing this test scaffolding).
+  // TEMP CALIBRATION TEST — ROUND 2. Narrowed down from the earlier 7-block
+  // test to the 5 font sizes you want to compare directly, each with its
+  // own proportional (2x) row height. The TA table is split into 5 blocks
+  // of 3 rows each. Once you've picked a winner, tell me which block number
+  // looked best and I'll set FormLayout's font/rowHeight to one fixed pair
+  // (removing this test scaffolding).
   //
-  //   Block 1 (rows 1-3):   8.0pt font,  16pt row height (tight)
-  //   Block 2 (rows 4-6):   8.5pt font,  18pt row height
-  //   Block 3 (rows 7-9):   9.0pt font,  20pt row height
-  //   Block 4 (rows 10-12): 9.5pt font,  22pt row height
-  //   Block 5 (rows 13-15): 10.0pt font, 24pt row height
-  //   Block 6 (rows 16-18): 10.5pt font, 26pt row height
-  //   Block 7 (rows 19-21): 11.0pt font, 28pt row height (loose)
+  //   Block 1 (rows 1-3):   9.0pt font,  18pt row height
+  //   Block 2 (rows 4-6):   9.5pt font,  19pt row height
+  //   Block 3 (rows 7-9):   10.0pt font, 20pt row height
+  //   Block 4 (rows 10-12): 10.5pt font, 21pt row height
+  //   Block 5 (rows 13-15): 11.0pt font, 22pt row height
   //
-  // If you add MORE than 21 rows, everything past row 21 just repeats
-  // Block 7's sizing (11pt / 28pt) rather than crashing.
+  // If you add MORE than 15 rows, everything past row 15 just repeats
+  // Block 5's sizing (11pt / 22pt) rather than crashing.
   // ═══════════════════════════════════════════════════════════════════════
-  static const List<double> _testFontSizes = [8.0, 8.5, 9.0, 9.5, 10.0, 10.5, 11.0];
-  static const List<double> _testRowHeights = [16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0];
+  static const List<double> _testFontSizes = [9.0, 9.5, 10.0, 10.5, 11.0];
+  static const List<double> _testRowHeights = [18.0, 19.0, 20.0, 21.0, 22.0];
   static const int _testRowsPerBlock = 3;
 
   // NOTE: rowIndex here must be the row's ABSOLUTE position in the full TA
   // table (0 = first leg overall), not its position within page1Legs/
-  // page2Legs. For the 21-row test case this table entirely fits on page 1
-  // (7 blocks × 3 rows × up to 28pt ≈ 154pt, well under the ~343pt page-1
+  // page2Legs. For the 15-row test case this table entirely fits on page 1
+  // (5 blocks × 3 rows × up to 22pt ≈ 99pt, well under the ~343pt page-1
   // table area), so page2Legs stays empty and this distinction doesn't
   // matter in practice — but if you ever test with enough rows to spill
   // onto page 2, make sure callers pass the absolute index, not a
@@ -338,6 +391,74 @@ class PdfService {
     return _testRowHeights[block];
   }
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // TEMP TEST — bold vs normal weight, compared block-wise:
+  //   Rows 1-9   (Blocks 1-3 / 9.0-10.0pt): BOLD
+  //   Rows 10-15 (Blocks 4-5 / 10.5-11.0pt): normal weight
+  // Applies to every leg-row text field (Date, Train No, Dep, Arr, From, To,
+  // Km, Day/Night) and to that row's Purpose/Amount text.
+  // ═══════════════════════════════════════════════════════════════════════
+  static const int _boldUntilRow = 9; // rows 0-8 (i.e. rows 1-9) are bold
+
+  static bool _testBoldForRow(int rowIndex) => rowIndex < _boldUntilRow;
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // TEMP TEST — Purpose overflow handling, compared side by side:
+  //   Trip 1 & Trip 2 → DYNAMIC mode: if a Purpose is too long for its
+  //     merged box at the fixed row height, the box grows taller to fit
+  //     the full text, and every row/trip after it is pushed down by
+  //     however much extra height was needed (a visible gap may appear
+  //     between this trip's rows and the next).
+  //   Trip 3 onward → CLIP mode: row heights never change; if a Purpose is
+  //     too long, it's safely clipped instead (font size stays fixed).
+  // Change `_dynamicTripCount` below to compare a different split.
+  // ═══════════════════════════════════════════════════════════════════════
+  static const int _dynamicTripCount = 2;
+
+  static bool _isDynamicModeForTrip(int tripIndex) =>
+      tripIndex < _dynamicTripCount;
+
+  /// How many characters of Purpose text fit on one line of the merged box
+  /// at this font size (Courier ≈ 0.6× font-size per character).
+  static int _purposeCharsPerLine(double fontSize) =>
+      (FormLayout.purposeWidth / (fontSize * 0.6)).floor().clamp(1, 999);
+
+  /// How many lines `text` will actually wrap to at this font size (a rough
+  /// word-wrap estimate — good enough for deciding how much extra height a
+  /// long Purpose needs, without needing the PDF engine's real layout pass).
+  static int _purposeWrappedLineCount(String text, double fontSize) {
+    if (text.isEmpty) return 1;
+    final maxChars = _purposeCharsPerLine(fontSize);
+    final words = text.split(RegExp(r'\s+'));
+    int lines = 1;
+    int lineLen = 0;
+    for (final word in words) {
+      final addLen = (lineLen == 0 ? 0 : 1) + word.length;
+      if (lineLen + addLen > maxChars) {
+        lines++;
+        lineLen = word.length;
+      } else {
+        lineLen += addLen;
+      }
+    }
+    return lines;
+  }
+
+  /// In DYNAMIC mode, the extra height (beyond the normal merged-rows
+  /// height) this trip's Purpose needs so its full text isn't clipped.
+  /// Returns 0 if the text already fits (no extra height needed).
+  static double _dynamicExtraHeightForPurpose(
+    String purpose,
+    double normalBlockHeight,
+    double fontSize,
+  ) {
+    final neededLines = _purposeWrappedLineCount(purpose, fontSize);
+    final lineHeight = fontSize * 1.15;
+    final neededHeight = neededLines * lineHeight;
+    final extra = neededHeight - normalBlockHeight;
+    return extra > 0 ? extra : 0.0;
+  }
+
   /// Cumulative Y position of `rowIndex` (0-based) given each row before it
   /// may have had a DIFFERENT height (since each 3-row block uses its own
   /// row height in this test).
@@ -350,27 +471,36 @@ class PdfService {
   }
 
   // ── Leg rows (everything except Purpose column) ───────────────────────────
+  // `rowOffset`: the ABSOLUTE index of flatLegs[0] within the full TA table
+  // (0 for page 1; page1Cap for page 2), so per-row font/height/gap lookups
+  // stay correct even when the table spans two pages.
+  // `extraHeightAfterRow`: dynamic-mode gaps, keyed by ABSOLUTE row index.
   static List<pw.Widget> _legRows(
     List<_FlatLeg> flatLegs,
     double rowHeight,
     double fontSize,
-    double startY,
-  ) {
+    double startY, {
+    int rowOffset = 0,
+    Map<int, double> extraHeightAfterRow = const {},
+  }) {
     final widgets = <pw.Widget>[];
     double y = startY;
 
-    for (int rowIndex = 0; rowIndex < flatLegs.length; rowIndex++) {
-      final flat = flatLegs[rowIndex];
+    for (int localIndex = 0; localIndex < flatLegs.length; localIndex++) {
+      final rowIndex = localIndex + rowOffset;
+      final flat = flatLegs[localIndex];
       final leg = flat.leg;
       // TEST: per-block font/row-height instead of the single shared values.
       fontSize = _testFontSizeForRow(rowIndex);
       rowHeight = _testRowHeightForRow(rowIndex);
+      final rowBold = _testBoldForRow(rowIndex);
 
       if (leg.vehicleEntryType == VehicleEntryType.halt) {
         // ── Halt row: Date stays normal; a single dashed line runs from
         // Train/Veh No. through to Day/Night (spanning all the columns that
         // don't apply to a halt), with "Halt at X" centered on top of it.
-        widgets.add(_overlayText(leg.date, FormLayout.dateX, y, fontSize));
+        widgets.add(_overlayText(leg.date, FormLayout.dateX, y, fontSize,
+            bold: rowBold));
 
         final dashLineWidth =
             (FormLayout.dayNightX + 28) - FormLayout.vehicleX;
@@ -381,7 +511,9 @@ class PdfService {
             width: dashLineWidth,
             child: pw.Text(
               '-' * (dashLineWidth / (fontSize * 0.52)).round(),
-              style: pw.TextStyle(font: pw.Font.courier(), fontSize: fontSize),
+              style: pw.TextStyle(
+                  font: rowBold ? pw.Font.courierBold() : pw.Font.courier(),
+                  fontSize: fontSize),
               overflow: pw.TextOverflow.clip,
               maxLines: 1,
             ),
@@ -398,22 +530,32 @@ class PdfService {
           fontSize,
           width: FormLayout.purposeX - FormLayout.vehicleX,
           textAlign: pw.TextAlign.center,
+          bold: rowBold,
         ));
       } else {
         // ── Normal journey row
-        widgets.add(_overlayText(leg.date, FormLayout.dateX, y, fontSize));
-        widgets.add(_overlayText(leg.vehicleNumber, FormLayout.vehicleX, y, fontSize));
-        widgets.add(_overlayText(leg.departureTime, FormLayout.departureX, y, fontSize));
-        widgets.add(_overlayText(leg.arrivalTime, FormLayout.arrivalX, y, fontSize));
-        widgets.add(_overlayText(leg.fromLocation, FormLayout.fromX, y, fontSize));
-        widgets.add(_overlayText(leg.toLocation, FormLayout.toX, y, fontSize));
+        widgets.add(_overlayText(leg.date, FormLayout.dateX, y, fontSize,
+            bold: rowBold));
+        widgets.add(_overlayText(leg.vehicleNumber, FormLayout.vehicleX, y,
+            fontSize, bold: rowBold));
+        widgets.add(_overlayText(leg.departureTime, FormLayout.departureX, y,
+            fontSize, bold: rowBold));
+        widgets.add(_overlayText(leg.arrivalTime, FormLayout.arrivalX, y,
+            fontSize, bold: rowBold));
+        widgets.add(_overlayText(leg.fromLocation, FormLayout.fromX, y,
+            fontSize, bold: rowBold));
+        widgets.add(_overlayText(leg.toLocation, FormLayout.toX, y, fontSize,
+            bold: rowBold));
         widgets.add(_overlayText(
             leg.distanceKm == 0 ? '' : leg.distanceKm.toStringAsFixed(0),
-            FormLayout.kmX, y, fontSize));
-        widgets.add(_overlayText(leg.dayNight, FormLayout.dayNightX, y, fontSize));
+            FormLayout.kmX, y, fontSize,
+            bold: rowBold));
+        widgets.add(_overlayText(leg.dayNight, FormLayout.dayNightX, y,
+            fontSize, bold: rowBold));
       }
 
       y += rowHeight;
+      y += extraHeightAfterRow[rowIndex] ?? 0.0;
     }
 
     return widgets;
@@ -432,10 +574,21 @@ class PdfService {
     List<_FlatLeg> flatLegs,
     double rowHeight,
     double fontSize,
-    double startY,
-  ) {
+    double startY, {
+    int rowOffset = 0,
+    Map<int, double> extraHeightAfterRow = const {},
+  }) {
     final widgets = <pw.Widget>[];
     if (flatLegs.isEmpty) return widgets;
+
+    double cumulativeY(int localIndex) {
+      double y = startY;
+      for (int k = 0; k < localIndex; k++) {
+        y += _testRowHeightForRow(k + rowOffset);
+        y += extraHeightAfterRow[k + rowOffset] ?? 0.0;
+      }
+      return y;
+    }
 
     int i = 0;
     while (i < flatLegs.length) {
@@ -451,13 +604,14 @@ class PdfService {
       // TEST: rows in this run may span different calibration blocks, each
       // with its own row height, so the block's total height is the sum of
       // each individual row's height rather than a uniform rowHeight * count.
-      final blockTopY = _testCumulativeY(startY, i);
+      final blockTopY = cumulativeY(i);
       double blockHeight = 0;
       for (int k = i; k < j; k++) {
-        blockHeight += _testRowHeightForRow(k);
+        blockHeight += _testRowHeightForRow(k + rowOffset);
       }
       // Use the font size of this block's FIRST row for the merged text.
-      fontSize = _testFontSizeForRow(i);
+      fontSize = _testFontSizeForRow(i + rowOffset);
+      final rowBold = _testBoldForRow(i + rowOffset);
 
       if (date.isNotEmpty) {
         final amt = _splitAmount(flatLegs[i].amount);
@@ -482,7 +636,9 @@ class PdfService {
             child: pw.Center(
               child: pw.Text(
                 amt.rupees,
-                style: pw.TextStyle(font: pw.Font.courier(), fontSize: fontSize),
+                style: pw.TextStyle(
+                    font: rowBold ? pw.Font.courierBold() : pw.Font.courier(),
+                    fontSize: fontSize),
               ),
             ),
           ),
@@ -495,7 +651,9 @@ class PdfService {
             child: pw.Center(
               child: pw.Text(
                 amt.paise,
-                style: pw.TextStyle(font: pw.Font.courier(), fontSize: fontSize),
+                style: pw.TextStyle(
+                    font: rowBold ? pw.Font.courierBold() : pw.Font.courier(),
+                    fontSize: fontSize),
               ),
             ),
           ),
@@ -516,10 +674,21 @@ class PdfService {
     List<_FlatLeg> flatLegs,
     double rowHeight,
     double fontSize,
-    double startY,
-  ) {
+    double startY, {
+    int rowOffset = 0,
+    Map<int, double> extraHeightAfterRow = const {},
+  }) {
     final widgets = <pw.Widget>[];
     if (flatLegs.isEmpty) return widgets;
+
+    double cumulativeY(int localIndex) {
+      double y = startY;
+      for (int k = 0; k < localIndex; k++) {
+        y += _testRowHeightForRow(k + rowOffset);
+        y += extraHeightAfterRow[k + rowOffset] ?? 0.0;
+      }
+      return y;
+    }
 
     int i = 0;
     while (i < flatLegs.length) {
@@ -533,13 +702,25 @@ class PdfService {
       final legCountOnThisPage = j - i;
       // TEST: same cumulative-height approach as _amountOverlay, since each
       // 3-row calibration block has its own row height.
-      final blockTopY = _testCumulativeY(startY, i);
-      double blockHeight = 0;
+      final blockTopY = cumulativeY(i);
+      double normalBlockHeight = 0;
       for (int k = i; k < j; k++) {
-        blockHeight += _testRowHeightForRow(k);
+        normalBlockHeight += _testRowHeightForRow(k + rowOffset);
       }
-      fontSize = _testFontSizeForRow(i);
+      fontSize = _testFontSizeForRow(i + rowOffset);
+      final rowBold = _testBoldForRow(i + rowOffset);
       final purpose = flatLegs[i].purpose;
+      final isDynamic = _isDynamicModeForTrip(tripIndex);
+
+      // DYNAMIC mode: the box grows to whatever height the full text needs
+      // (the extra was already reserved as a gap by the pre-pass, so this
+      // box visually fills that gap instead of leaving it empty).
+      // CLIP mode: box stays exactly the normal merged-rows height; text
+      // beyond that is safely clipped rather than resized or overflowing.
+      final blockHeight = isDynamic
+          ? normalBlockHeight +
+              _dynamicExtraHeightForPurpose(purpose, normalBlockHeight, fontSize)
+          : normalBlockHeight;
 
       if (purpose.isNotEmpty) {
         // Curly-bracket connector only drawn when this trip has more than 1 leg on
@@ -554,6 +735,12 @@ class PdfService {
           ));
         }
 
+        // Font size is ALWAYS fixed at `fontSize` — never shrunk — so every
+        // Purpose entry on the form looks visually consistent.
+        //   DYNAMIC trips: box height already grew to fit the full text
+        //     above, so no clipping should ever be needed here.
+        //   CLIP trips: box stays at the normal height; text beyond that is
+        //     safely clipped (never overflows/crashes the PDF).
         widgets.add(pw.Positioned(
           left: FormLayout.purposeX,
           top: blockTopY,
@@ -564,7 +751,13 @@ class PdfService {
               child: pw.Text(
                 purpose,
                 textAlign: pw.TextAlign.center,
-                style: pw.TextStyle(font: pw.Font.courier(), fontSize: fontSize),
+                style: pw.TextStyle(
+                    font: rowBold ? pw.Font.courierBold() : pw.Font.courier(),
+                    fontSize: fontSize),
+                maxLines: isDynamic
+                    ? null
+                    : (normalBlockHeight / (fontSize * 1.15)).floor().clamp(1, 20),
+                overflow: pw.TextOverflow.clip,
               ),
             ),
           ),
