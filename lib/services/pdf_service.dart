@@ -28,6 +28,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../config/form_layout.dart';
+import '../config/ta_calc_helpers.dart';
 import '../models/trip_model.dart';
 import '../models/contingent_model.dart';
 import '../models/employee_profile.dart';
@@ -133,16 +134,12 @@ class PdfService {
       return y;
     }
 
-    // ── Decide row height / font size for the WHOLE TA table, then split
-    //    legs between page 1 and page 2 based on how many fit on page 1. ───
-    // TEST MODE: row height/font size now vary per-row (see the blocks
-    // defined near _legRows), so page-1 capacity is computed by walking
-    // cumulative heights (including dynamic-mode gaps) instead of a single
-    // uniform rowHeight. `rowHeight` and `fontSize` below are kept only as
-    // fallback values passed into helper signatures that still expect a
-    // default.
-    const rowHeight = 24.0; // unused fallback while test blocks are active
-    const fontSize = 9.0; // unused fallback while test blocks are active
+    // ── Row height / font size for the WHOLE TA table. All text is now a
+    //    fixed 10pt bold (Purpose column is the sole exception at 9.5pt —
+    //    see _testFontSizeForRow), with one fixed row height for the whole
+    //    table. ────────────────────────────────────────────────────────────
+    const rowHeight = 24.0; // fallback value passed into helper signatures
+    const fontSize = 10.0; // fallback value passed into helper signatures
 
     int page1Cap = 0;
     {
@@ -185,8 +182,8 @@ class PdfService {
     // TEST MODE: same 7-block calibration as the TA table. Total height =
     // the header line (Block 1's height) + each entry's own block height.
     final contingentEntries = contingentData?.entries ?? <ContingentEntry>[];
-    const contingentRowHeight = 24.0; // unused fallback while test blocks are active
-    const contingentFontSize = 9.0; // unused fallback while test blocks are active
+    const contingentRowHeight = 24.0; // fallback value passed into helper signatures
+    const contingentFontSize = 10.0; // fallback value passed into helper signatures
     double contingentTotalHeight = _testRowHeightForRow(0); // header line
     for (int k = 0; k < contingentEntries.length; k++) {
       contingentTotalHeight += _testRowHeightForRow(k);
@@ -262,11 +259,14 @@ class PdfService {
               ..._contingentOverlay(contingentData, contingentStartYFinal,
                   contingentRowHeight, contingentFontSize),
             // "मैं प्रमाणित करता हूँ कि श्री ____" — officer's name
-            _overlayText(
+            _overlayTextBox(
               profile.name,
               FormLayout.certNameX,
               FormLayout.certNameY,
-              FormLayout.fontSizeNormal,
+              10.0,
+              width: FormLayout.certNameWidth,
+              bold: true,
+              textAlign: _alignFromString(FormLayout.certNameAlign),
             ),
           ],
         ),
@@ -311,96 +311,77 @@ class PdfService {
         ? session.year.substring(session.year.length - 2)
         : session.year;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // TEMP CALIBRATION TEST — each header field pinned to a different font
-    // size (8.5 / 9.0 / 9.5 / 10.0 / 10.5 pt) so you can print once and see
-    // which size reads best on the physical form. Field → size mapping:
-    //   Branch               → 8.5pt
-    //   Division              → 9.0pt
-    //   Headquarters          → 9.5pt
-    //   Employee Name         → 10.0pt
-    //   Month                 → 10.5pt
-    //   Year                  → 8.5pt   (cycle repeats)
-    //   Designation           → 9.0pt
-    //   Pay                   → 9.5pt
-    //   Date of Appointment   → 10.0pt
-    // Once you've picked a winner, tell me the size and I'll set every
-    // field back to that single FormLayout.fontSizeNormal-style constant.
-    // ═══════════════════════════════════════════════════════════════════════
+    // All header fields: fixed 10pt, bold, each centered within its
+    // measured slot width from the coordinate picker.
     return [
-      _overlayText(profile.department, FormLayout.branchX,
-          FormLayout.branchDivisionHqY, 8.5),
-      _overlayText(profile.division, FormLayout.divisionX,
-          FormLayout.branchDivisionHqY, 9.0),
-      _overlayText(profile.headquarter, FormLayout.headquartersX,
-          FormLayout.branchDivisionHqY, 9.5),
-      _overlayText(profile.name, FormLayout.employeeNameX,
-          FormLayout.shriRowY, 10.0),
-      _overlayText(_capitalize(session.month), FormLayout.monthX,
-          FormLayout.shriRowY, 10.5),
-      _overlayText(yearShort, FormLayout.yearX, FormLayout.shriRowY, 8.5),
-      _overlayText(profile.designation, FormLayout.designationX,
-          FormLayout.designationRowY, 9.0),
-      _overlayText(
+      _overlayTextBox(profile.department, FormLayout.branchX,
+          FormLayout.branchDivisionHqY, 10.0,
+          width: FormLayout.branchWidth,
+          bold: true,
+          textAlign: _alignFromString(FormLayout.branchAlign)),
+      _overlayTextBox(profile.division, FormLayout.divisionX,
+          FormLayout.branchDivisionHqY, 10.0,
+          width: FormLayout.divisionWidth,
+          bold: true,
+          textAlign: _alignFromString(FormLayout.divisionAlign)),
+      _overlayTextBox(profile.headquarter, FormLayout.headquartersX,
+          FormLayout.branchDivisionHqY, 10.0,
+          width: FormLayout.headquartersWidth,
+          bold: true,
+          textAlign: _alignFromString(FormLayout.headquartersAlign)),
+      _overlayTextBox(profile.name, FormLayout.employeeNameX,
+          FormLayout.shriRowY, 10.0,
+          width: FormLayout.employeeNameWidth,
+          bold: true,
+          textAlign: _alignFromString(FormLayout.employeeNameAlign)),
+      _overlayTextBox(monthNameToShort(session.month), FormLayout.monthX,
+          FormLayout.shriRowY, 10.0,
+          width: FormLayout.monthWidth,
+          bold: true,
+          textAlign: _alignFromString(FormLayout.monthAlign)),
+      _overlayTextBox(yearShort, FormLayout.yearX, FormLayout.shriRowY, 10.0,
+          width: FormLayout.yearWidth,
+          bold: true,
+          textAlign: _alignFromString(FormLayout.yearAlign)),
+      _overlayTextBox(profile.designation, FormLayout.designationX,
+          FormLayout.designationRowY, 10.0,
+          width: FormLayout.designationWidth,
+          bold: true,
+          textAlign: _alignFromString(FormLayout.designationAlign)),
+      _overlayTextBox(
         profile.basicPay > 0 ? profile.basicPay.toStringAsFixed(0) : '',
         FormLayout.payX,
         FormLayout.designationRowY,
-        9.5,
+        10.0,
+        width: FormLayout.payWidth,
+        bold: true,
+        textAlign: _alignFromString(FormLayout.payAlign),
       ),
-      _overlayText(profile.dateOfAppointment, FormLayout.dateOfAppointmentX,
-          FormLayout.designationRowY, 10.0),
+      _overlayTextBox(profile.dateOfAppointment,
+          FormLayout.dateOfAppointmentX, FormLayout.designationRowY, 10.0,
+          width: FormLayout.dateOfAppointmentWidth,
+          bold: true,
+          textAlign: _alignFromString(FormLayout.dateOfAppointmentAlign)),
+      // "Rule by which governed" — fixed text (not from profile).
+      _overlayTextBox(FormLayout.ruleText, FormLayout.ruleX,
+          FormLayout.ruleY, 10.0,
+          width: FormLayout.ruleWidth,
+          bold: true,
+          textAlign: _alignFromString(FormLayout.ruleAlign)),
     ];
   }
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // TEMP CALIBRATION TEST — ROUND 2. Narrowed down from the earlier 7-block
-  // test to the 5 font sizes you want to compare directly, each with its
-  // own proportional (2x) row height. The TA table is split into 5 blocks
-  // of 3 rows each. Once you've picked a winner, tell me which block number
-  // looked best and I'll set FormLayout's font/rowHeight to one fixed pair
-  // (removing this test scaffolding).
-  //
-  //   Block 1 (rows 1-3):   9.0pt font,  18pt row height
-  //   Block 2 (rows 4-6):   9.5pt font,  19pt row height
-  //   Block 3 (rows 7-9):   10.0pt font, 20pt row height
-  //   Block 4 (rows 10-12): 10.5pt font, 21pt row height
-  //   Block 5 (rows 13-15): 11.0pt font, 22pt row height
-  //
-  // If you add MORE than 15 rows, everything past row 15 just repeats
-  // Block 5's sizing (11pt / 22pt) rather than crashing.
-  // ═══════════════════════════════════════════════════════════════════════
-  static const List<double> _testFontSizes = [9.0, 9.5, 10.0, 10.5, 11.0];
-  static const List<double> _testRowHeights = [18.0, 19.0, 20.0, 21.0, 22.0];
-  static const int _testRowsPerBlock = 3;
+  // ── Fixed sizing: every field is 10pt bold, one uniform row height.
+  //    (Purpose column overrides to 9.5pt in _purposeOverlay below.) ────────
+  static const double _fixedFontSize = 10.0;
+  static const double _fixedRowHeight = 20.0;
 
-  // NOTE: rowIndex here must be the row's ABSOLUTE position in the full TA
-  // table (0 = first leg overall), not its position within page1Legs/
-  // page2Legs. For the 15-row test case this table entirely fits on page 1
-  // (5 blocks × 3 rows × up to 22pt ≈ 99pt, well under the ~343pt page-1
-  // table area), so page2Legs stays empty and this distinction doesn't
-  // matter in practice — but if you ever test with enough rows to spill
-  // onto page 2, make sure callers pass the absolute index, not a
-  // page-local one.
-  static double _testFontSizeForRow(int rowIndex) {
-    final block = (rowIndex ~/ _testRowsPerBlock).clamp(0, _testFontSizes.length - 1);
-    return _testFontSizes[block];
-  }
+  static double _testFontSizeForRow(int rowIndex) => _fixedFontSize;
 
-  static double _testRowHeightForRow(int rowIndex) {
-    final block = (rowIndex ~/ _testRowsPerBlock).clamp(0, _testRowHeights.length - 1);
-    return _testRowHeights[block];
-  }
+  static double _testRowHeightForRow(int rowIndex) => _fixedRowHeight;
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // TEMP TEST — bold vs normal weight, compared block-wise:
-  //   Rows 1-9   (Blocks 1-3 / 9.0-10.0pt): BOLD
-  //   Rows 10-15 (Blocks 4-5 / 10.5-11.0pt): normal weight
-  // Applies to every leg-row text field (Date, Train No, Dep, Arr, From, To,
-  // Km, Day/Night) and to that row's Purpose/Amount text.
-  // ═══════════════════════════════════════════════════════════════════════
-  static const int _boldUntilRow = 9; // rows 0-8 (i.e. rows 1-9) are bold
-
-  static bool _testBoldForRow(int rowIndex) => rowIndex < _boldUntilRow;
+  // All text is bold now.
+  static bool _testBoldForRow(int rowIndex) => true;
 
   // ═══════════════════════════════════════════════════════════════════════
   // TEMP TEST — Purpose overflow handling, compared side by side:
@@ -418,10 +399,10 @@ class PdfService {
   static bool _isDynamicModeForTrip(int tripIndex) =>
       tripIndex < _dynamicTripCount;
 
-  /// How many characters of Purpose text fit on one line of the merged box
-  /// at this font size (Courier ≈ 0.6× font-size per character).
-  static int _purposeCharsPerLine(double fontSize) =>
-      (FormLayout.purposeWidth / (fontSize * 0.6)).floor().clamp(1, 999);
+  /// How many characters of Purpose text fit on one printed line of the
+  /// merged box. Fixed at 13 chars/line (5-line max, i.e. 65 chars total)
+  /// to match the app's own 65-char Purpose input limit.
+  static int _purposeCharsPerLine(double fontSize) => 13;
 
   /// How many lines `text` will actually wrap to at this font size (a rough
   /// word-wrap estimate — good enough for deciding how much extra height a
@@ -536,16 +517,48 @@ class PdfService {
         // ── Normal journey row
         widgets.add(_overlayText(leg.date, FormLayout.dateX, y, fontSize,
             bold: rowBold));
-        widgets.add(_overlayText(leg.vehicleNumber, FormLayout.vehicleX, y,
-            fontSize, bold: rowBold));
+        // Train/Vehicle No.: if it's a short numeric train number it stays
+        // one line; free-text modes (e.g. "By Road", max 3 words) print one
+        // WORD per line, top to bottom, so it never runs sideways into the
+        // next column — each word forced onto its own line rather than
+        // relying on width-based wrapping.
+        widgets.add(_overlayMultilineText(
+          leg.vehicleNumber.contains(' ')
+              ? leg.vehicleNumber.split(RegExp(r'\s+')).join('\n')
+              : leg.vehicleNumber,
+          FormLayout.vehicleX,
+          y,
+          fontSize,
+          width: FormLayout.departureX - FormLayout.vehicleX - 2,
+          maxLines: 3,
+          bold: rowBold,
+        ));
         widgets.add(_overlayText(leg.departureTime, FormLayout.departureX, y,
             fontSize, bold: rowBold));
         widgets.add(_overlayText(leg.arrivalTime, FormLayout.arrivalX, y,
             fontSize, bold: rowBold));
-        widgets.add(_overlayText(leg.fromLocation, FormLayout.fromX, y,
-            fontSize, bold: rowBold));
-        widgets.add(_overlayText(leg.toLocation, FormLayout.toX, y, fontSize,
-            bold: rowBold));
+        // From: wraps at ~9 chars/line, up to 3 lines (27 chars total),
+        // matching the app's 27-char From input limit.
+        widgets.add(_overlayMultilineText(
+          leg.fromLocation,
+          FormLayout.fromX,
+          y,
+          fontSize,
+          width: 9 * fontSize * 0.6,
+          maxLines: 3,
+          bold: rowBold,
+        ));
+        // To: wraps at ~8 chars/line, up to 3 lines (24 chars total),
+        // matching the app's 24-char To input limit.
+        widgets.add(_overlayMultilineText(
+          leg.toLocation,
+          FormLayout.toX,
+          y,
+          fontSize,
+          width: 8 * fontSize * 0.6,
+          maxLines: 3,
+          bold: rowBold,
+        ));
         widgets.add(_overlayText(
             leg.distanceKm == 0 ? '' : leg.distanceKm.toStringAsFixed(0),
             FormLayout.kmX, y, fontSize,
@@ -707,7 +720,8 @@ class PdfService {
       for (int k = i; k < j; k++) {
         normalBlockHeight += _testRowHeightForRow(k + rowOffset);
       }
-      fontSize = _testFontSizeForRow(i + rowOffset);
+      // Purpose column is the one exception: fixed at 9.5pt (still bold).
+      fontSize = 9.5;
       final rowBold = _testBoldForRow(i + rowOffset);
       final purpose = flatLegs[i].purpose;
       final isDynamic = _isDynamicModeForTrip(tripIndex);
@@ -741,6 +755,11 @@ class PdfService {
         //     above, so no clipping should ever be needed here.
         //   CLIP trips: box stays at the normal height; text beyond that is
         //     safely clipped (never overflows/crashes the PDF).
+        // The text block itself is vertically (and horizontally, via the
+        // SizedBox width) centered inside the box, but the text's OWN
+        // alignment stays justified — so lines still line up flush on
+        // both the left and right edges, they just sit centered top-to-
+        // bottom instead of starting flush at the top.
         widgets.add(pw.Positioned(
           left: FormLayout.purposeX,
           top: blockTopY,
@@ -750,13 +769,13 @@ class PdfService {
             child: pw.Center(
               child: pw.Text(
                 purpose,
-                textAlign: pw.TextAlign.center,
+                textAlign: pw.TextAlign.justify,
                 style: pw.TextStyle(
                     font: rowBold ? pw.Font.courierBold() : pw.Font.courier(),
                     fontSize: fontSize),
                 maxLines: isDynamic
                     ? null
-                    : (normalBlockHeight / (fontSize * 1.15)).floor().clamp(1, 20),
+                    : (normalBlockHeight / (fontSize * 1.15)).floor().clamp(1, 5),
                 overflow: pw.TextOverflow.clip,
               ),
             ),
@@ -798,12 +817,12 @@ class PdfService {
     final widgets = <pw.Widget>[];
     double y = startY;
 
-    // Header line uses Block 1's font size + 1pt, kept bold as before.
+    // Header line: fixed 10pt, bold.
     widgets.add(_overlayText(
       'Contingent Bill',
       FormLayout.contingentDateX,
       y,
-      _testFontSizeForRow(0) + 1,
+      10.0,
       bold: true,
     ));
     y += _testRowHeightForRow(0);
@@ -814,16 +833,21 @@ class PdfService {
       final thisRowHeight = _testRowHeightForRow(rowIndex);
 
       widgets.add(_overlayText(
-          entry.date, FormLayout.contingentDateX, y, rowFontSize));
+          entry.date, FormLayout.contingentDateX, y, rowFontSize,
+          bold: true));
       widgets.add(_overlayText(
-          entry.fromLocation, FormLayout.contingentFromX, y, rowFontSize));
+          entry.fromLocation, FormLayout.contingentFromX, y, rowFontSize,
+          bold: true));
       widgets.add(_overlayText(
-          entry.toLocation, FormLayout.contingentToX, y, rowFontSize));
+          entry.toLocation, FormLayout.contingentToX, y, rowFontSize,
+          bold: true));
       widgets.add(_overlayText(
           entry.distanceKm == 0 ? '' : entry.distanceKm.toStringAsFixed(0),
-          FormLayout.contingentKmX, y, rowFontSize));
+          FormLayout.contingentKmX, y, rowFontSize,
+          bold: true));
       widgets.add(_overlayText('Rs. ${entry.amount.toStringAsFixed(0)}',
-          FormLayout.contingentAmountX, y, rowFontSize));
+          FormLayout.contingentAmountX, y, rowFontSize,
+          bold: true));
       y += thisRowHeight;
     }
 
@@ -911,6 +935,54 @@ class PdfService {
     );
   }
 
+  // ── Multi-line, word-wrapped text overlay for narrow table columns (e.g.
+  //    From/To/Train-Mode) so long values wrap DOWN within the column
+  //    instead of running past its right edge into the next column. Wraps
+  //    on whole words where possible; a single word longer than one line
+  //    is hard-broken so it still never overflows the column width. Text
+  //    beyond `maxLines` is clipped (never overflows the row height). ──────
+  static pw.Widget _overlayMultilineText(
+    String text,
+    double x,
+    double y,
+    double fontSize, {
+    required double width,
+    required int maxLines,
+    bool bold = false,
+    pw.TextAlign textAlign = pw.TextAlign.left,
+  }) {
+    return pw.Positioned(
+      left: x,
+      top: y,
+      child: pw.SizedBox(
+        width: width,
+        child: pw.Text(
+          text,
+          textAlign: textAlign,
+          maxLines: maxLines,
+          overflow: pw.TextOverflow.clip,
+          style: pw.TextStyle(
+            font: bold ? pw.Font.courierBold() : pw.Font.courier(),
+            fontSize: fontSize,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Converts the 'left'/'center'/'right' strings from FormLayout into a
+  //    pw.TextAlign for use with _overlayTextBox. ───────────────────────────
+  static pw.TextAlign _alignFromString(String align) {
+    switch (align) {
+      case 'center':
+        return pw.TextAlign.center;
+      case 'right':
+        return pw.TextAlign.right;
+      default:
+        return pw.TextAlign.left;
+    }
+  }
+
   // ── Width-constrained (wrapping) text overlay ─────────────────────────────
   static pw.Widget _overlayTextBox(
     String text,
@@ -948,6 +1020,4 @@ class PdfService {
     }
   }
 
-  static String _capitalize(String s) =>
-      s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 }
