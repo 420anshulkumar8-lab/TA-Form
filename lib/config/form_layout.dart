@@ -41,45 +41,70 @@ class FormLayout {
   // ════════════════════════════════════════════════════════════════════════
 
   // Row: "शाखा/Branch ____  मंडल/जिला/Division/District ____  सदर मुकाम/HQ ____"
-  static const double branchDivisionHqY = 77.3;
-  static const double branchX = 120.4;
-  static const double divisionX = 292.9;
-  static const double headquartersX = 476.7;
+  static const double branchDivisionHqY = 80.5;
+  static const double branchX = 89.1;
+  static const double branchWidth = 90;
+  static const String branchAlign = 'center';
+  static const double divisionX = 249.4;
+  static const double divisionWidth = 130;
+  static const String divisionAlign = 'center';
+  static const double headquartersX = 456.5;
+  static const double headquartersWidth = 90;
+  static const String headquartersAlign = 'center';
 
   // Row: "...performed by Shri ____ for which allowance ____ 20__ is claimed"
-  static const double shriRowY = 112.2;
-  static const double employeeNameX = 209.8; // employee's name
-  static const double monthX = 418.0; // month name (e.g. "June")
-  static const double yearX = 454.0; // last 2 digits of year
+  static const double shriRowY = 112.9;
+  static const double employeeNameX = 179.9; // employee's name
+  static const double employeeNameWidth = 150;
+  static const String employeeNameAlign = 'center';
+  static const double monthX = 387.6; // month name (e.g. "June")
+  static const double monthWidth = 100;
+  static const String monthAlign = 'center';
+  static const double yearX = 458.6; // last 2 digits of year
+  static const double yearWidth = 40;
+  static const String yearAlign = 'center';
 
   // Row: "पद/Designation ____ वेतन/Pay ____ नियुक्ति की तारीख/Date of appointment ____"
-  static const double designationRowY = 126.9;
-  static const double designationX = 111.7;
-  static const double payX = 255.7;
-  static const double dateOfAppointmentX = 468.7;
+  static const double designationRowY = 129.5;
+  static const double designationX = 88;
+  static const double designationWidth = 130;
+  static const String designationAlign = 'center';
+  static const double payX = 229.3;
+  static const double payWidth = 90;
+  static const String payAlign = 'center';
+  static const double dateOfAppointmentX = 446.6;
+  static const double dateOfAppointmentWidth = 90;
+  static const String dateOfAppointmentAlign = 'center';
 
   // Row: "किस नियम से शासित/Rule by which governed ____"
-  static const double ruleY = 142.6;
-  static const double ruleX = 233.1;
+  static const double ruleY = 146;
+  static const double ruleX = 224.9;
+  static const double ruleWidth = 200;
+  static const String ruleAlign = 'left';
+  // Fixed value printed for this field — not sourced from employee profile.
+  // Keep this at or under 50 characters (may be replaced with a specific
+  // rule reference later).
+  static const String ruleText = 'Railway Rule';
 
   // ════════════════════════════════════════════════════════════════════════
   // PAGE 1 — TA Table (9 columns; col-5 splits From|To, col-9 splits Rs|Paise)
   // ════════════════════════════════════════════════════════════════════════
-  static const double dateX = 33.2; // 1. महीना और तारीख / Month & date
-  static const double vehicleX = 93.9; // 2. गाड़ी नं. / No. of Train
-  static const double departureX = 128.0; // 3. प्रस्थान का समय / Time left
-  static const double arrivalX = 162.6; // 4. पहुंचने का समय / Time arrived
-  static const double fromX = 202.4; // 5a. से/From
-  static const double toX = 271.8; // 5b. तक/To
-  static const double kmX = 327.3; // 6. किलोमीटर / Kilometre
-  static const double dayNightX = 364.3; // 7. दिन/रात / Day-Night
-  static const double purposeX = 390.9; // 8. यात्रा का उद्देश्य / Object of Journey
-  static const double purposeWidth = 78.0; // width of column 8 (for text wrap)
-  static const double amountRsX = 480.6; // 9a. रुपये/Rs.
-  static const double amountPaiseX = 514.8; // 9b. पैसे/Paise
+  static const double dateX = 28; // 1. महीना और तारीख / Month & date
+  static const double vehicleX = 92; // 2. गाड़ी नं. / No. of Train
+  static const double departureX = 125.4; // 3. प्रस्थान का समय / Time left
+  static const double arrivalX = 159; // 4. पहुंचने का समय / Time arrived
+  static const double fromX = 195; // 5a. से/From
+  static const double toX = 258.5; // 5b. तक/To
+  static const double kmX = 317.2; // 6. किलोमीटर / Kilometre
+  static const double dayNightX = 356; // 7. दिन/रात / Day-Night
+  static const double purposeX = 390; // 8. यात्रा का उद्देश्य / Object of Journey
+  static const double purposeWidth = 80.0; // width of column 8 (for text wrap)
+  static const String purposeAlign = 'left';
+  static const double amountRsX = 471; // 9a. रुपये/Rs.
+  static const double amountPaiseX = 505; // 9b. पैसे/Paise
 
   // Table body Y-bounds on page 1
-  static const double firstRowY = 237.2; // top of first data row
+  static const double firstRowY = 243.1; // top of first data row
   static const double tableBottomY1 = 705.0; // table's bottom border
 
   // ════════════════════════════════════════════════════════════════════════
@@ -91,6 +116,8 @@ class FormLayout {
   // "मैं प्रमाणित करता हूँ कि श्री ____ बिल में दिये गये समय के लिए..."
   static const double certNameX = 116.0;
   static const double certNameY = 524.0;
+  static const double certNameWidth = 160;
+  static const String certNameAlign = 'left';
 
   // ════════════════════════════════════════════════════════════════════════
   // Row sizing — one rowHeight/fontSize pair is chosen for the WHOLE table
