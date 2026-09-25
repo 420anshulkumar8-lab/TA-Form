@@ -15,6 +15,23 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../models/trip_model.dart';
 
+/// Blocks typing beyond [maxWords] space-separated words — used for the
+/// Vehicle/Train "Other" mode field (e.g. "By Road") so the printed PDF
+/// never has to wrap more than 3 words across the Train No. column.
+class _MaxWordsInputFormatter extends TextInputFormatter {
+  final int maxWords;
+  const _MaxWordsInputFormatter(this.maxWords);
+
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    final words =
+        newValue.text.trim().isEmpty ? <String>[] : newValue.text.trim().split(RegExp(r'\s+'));
+    if (words.length <= maxWords) return newValue;
+    return oldValue;
+  }
+}
+
 /// Dashed border painter for "suggested, not yet confirmed" cells.
 class _DashedBorderPainter extends CustomPainter {
   final Color color;
@@ -118,6 +135,14 @@ class EditableTextCell extends StatelessWidget {
   /// — a format example, never mistakable for real filled-in data.
   final String? hintText;
 
+  /// Maximum total characters allowed (enforced live via maxLength on the
+  /// edit dialog's TextField). Null = no limit.
+  final int? maxLength;
+
+  /// Extra input formatters (e.g. digits-only) applied to the edit dialog's
+  /// TextField, in addition to the maxLength cap above.
+  final List<TextInputFormatter>? inputFormatters;
+
   const EditableTextCell({
     super.key,
     required this.width,
@@ -128,6 +153,8 @@ class EditableTextCell extends StatelessWidget {
     this.isSuggested = false,
     this.keyboardType,
     this.hintText,
+    this.maxLength,
+    this.inputFormatters,
   });
 
   Future<void> _edit(BuildContext context) async {
@@ -141,7 +168,12 @@ class EditableTextCell extends StatelessWidget {
           autofocus: true,
           keyboardType: keyboardType,
           textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(border: OutlineInputBorder()),
+          maxLength: maxLength,
+          inputFormatters: inputFormatters,
+          decoration: InputDecoration(
+            border: const OutlineInputBorder(),
+            counterText: maxLength == null ? '' : null,
+          ),
           onSubmitted: (v) => Navigator.pop(ctx, v),
         ),
         actions: [
@@ -422,23 +454,33 @@ class EditableVehicleCell extends StatelessWidget {
           text: vehicleType == VehicleEntryType.other ? value : '');
       final result = await showDialog<String>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Mode (e.g. By Road, By Taxi)'),
-          content: TextField(
-            controller: ctrl,
-            autofocus: true,
-            textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(border: OutlineInputBorder()),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Cancel')),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text),
-              child: const Text('OK'),
-            ),
-          ],
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            String? errorText;
+            return AlertDialog(
+              title: const Text('Mode (e.g. By Road, By Taxi)'),
+              content: TextField(
+                controller: ctrl,
+                autofocus: true,
+                textCapitalization: TextCapitalization.words,
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
+                  helperText: 'Max 3 words',
+                  errorText: errorText,
+                ),
+                inputFormatters: [_MaxWordsInputFormatter(3)],
+              ),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Cancel')),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, ctrl.text),
+                  child: const Text('OK'),
+                ),
+              ],
+            );
+          },
         ),
       );
       if (result != null && result.trim().isNotEmpty) {

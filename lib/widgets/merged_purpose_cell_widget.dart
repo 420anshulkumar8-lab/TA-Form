@@ -35,6 +35,7 @@ class MergedPurposeCellWidget extends StatelessWidget {
           controller: ctrl,
           autofocus: true,
           maxLines: 3,
+          maxLength: 65,
           textCapitalization: TextCapitalization.sentences,
           decoration: const InputDecoration(
             border: OutlineInputBorder(),
