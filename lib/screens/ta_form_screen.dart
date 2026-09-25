@@ -1,5 +1,6 @@
 // lib/screens/ta_form_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../config/ta_calc_helpers.dart';
 import '../models/contingent_model.dart';
@@ -1000,6 +1001,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
               enabled: _isEditing,
               isSuggested: leg.fromIsSuggested,
               hintText: 'From',
+              maxLength: 27,
               onChanged: (v) => _updateLeg(tripIndex, legIndex,
                   (r) => r.copyWith(fromLocation: v, fromIsSuggested: false)),
             ),
@@ -1010,6 +1012,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
               enabled: _isEditing,
               isSuggested: leg.toIsSuggested,
               hintText: 'To',
+              maxLength: 24,
               onChanged: (v) => _updateLeg(tripIndex, legIndex,
                   (r) => r.copyWith(toLocation: v, toIsSuggested: false)),
             ),
@@ -1022,6 +1025,11 @@ class _TaFormScreenState extends State<TaFormScreen> {
               enabled: _isEditing,
               keyboardType: TextInputType.number,
               hintText: 'Km',
+              maxLength: 4,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(4),
+              ],
               onChanged: (v) => _updateLeg(tripIndex, legIndex,
                   (r) => r.copyWith(distanceKm: double.tryParse(v) ?? 0)),
             ),
@@ -1104,6 +1112,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
               label: 'From',
               enabled: _isEditing,
               hintText: 'From',
+              maxLength: 27,
               onChanged: (v) =>
                   _updateContingent(i, (e) => e.copyWith(fromLocation: v))),
           EditableTextCell(
@@ -1112,6 +1121,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
               label: 'To',
               enabled: _isEditing,
               hintText: 'To',
+              maxLength: 24,
               onChanged: (v) =>
                   _updateContingent(i, (e) => e.copyWith(toLocation: v))),
           EditableTextCell(
@@ -1123,6 +1133,11 @@ class _TaFormScreenState extends State<TaFormScreen> {
             enabled: _isEditing,
             keyboardType: TextInputType.number,
             hintText: 'Km',
+            maxLength: 4,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(4),
+            ],
             onChanged: (v) => _updateContingent(
                 i, (e) => e.copyWith(distanceKm: double.tryParse(v) ?? 0)),
           ),
@@ -1133,6 +1148,11 @@ class _TaFormScreenState extends State<TaFormScreen> {
             enabled: _isEditing,
             keyboardType: TextInputType.number,
             hintText: 'Rs.',
+            maxLength: 6,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(6),
+            ],
             onChanged: (v) => _updateContingent(
                 i, (e) => e.copyWith(amount: double.tryParse(v) ?? 0)),
           ),

@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import '../models/employee_profile.dart';
 import '../providers/app_provider.dart';
 import '../config/railway_options.dart';
-import '../config/department_options.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -26,11 +25,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late TextEditingController _headquarterCtrl;
   late TextEditingController _basicPayCtrl;
   late TextEditingController _railwayOtherCtrl;
-  late TextEditingController _departmentOtherCtrl;
+  late TextEditingController _departmentCtrl;
 
   int _level = 1;
   String _railway = RailwayOptions.list.first;
-  String _department = DepartmentOptions.list.first;
   String _dateOfAppointment = '';
 
   @override
@@ -46,6 +44,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _employeeNoCtrl = TextEditingController(text: profile.employeeNo);
     _divisionCtrl = TextEditingController(text: profile.division);
     _headquarterCtrl = TextEditingController(text: profile.headquarter);
+    _departmentCtrl = TextEditingController(text: profile.department);
     _basicPayCtrl = TextEditingController(
         text: profile.basicPay > 0 ? profile.basicPay.toStringAsFixed(0) : '');
     _dateOfAppointment = profile.dateOfAppointment;
@@ -64,19 +63,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _railway = RailwayOptions.list.first;
       _railwayOtherCtrl = TextEditingController();
     }
-
-    // Department: same pattern
-    if (profile.department.isNotEmpty &&
-        DepartmentOptions.list.contains(profile.department)) {
-      _department = profile.department;
-      _departmentOtherCtrl = TextEditingController();
-    } else if (profile.department.isNotEmpty) {
-      _department = DepartmentOptions.other;
-      _departmentOtherCtrl = TextEditingController(text: profile.department);
-    } else {
-      _department = DepartmentOptions.list.first;
-      _departmentOtherCtrl = TextEditingController();
-    }
   }
 
   @override
@@ -89,7 +75,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _headquarterCtrl,
       _basicPayCtrl,
       _railwayOtherCtrl,
-      _departmentOtherCtrl,
+      _departmentCtrl,
     ]) {
       c.dispose();
     }
@@ -117,9 +103,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final railwayValue = _railway == RailwayOptions.other
         ? _railwayOtherCtrl.text.trim()
         : _railway;
-    final departmentValue = _department == DepartmentOptions.other
-        ? _departmentOtherCtrl.text.trim()
-        : _department;
+    final departmentValue = _departmentCtrl.text.trim();
 
     final existingPhoto = context.read<AppProvider>().profile.photoPath;
 
@@ -179,11 +163,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 label: 'Name *',
                 controller: _nameCtrl,
                 enabled: _isEditing,
+                maxLength: 25,
                 validator: (v) => v!.trim().isEmpty ? 'Required' : null),
             _buildField(
                 label: 'Designation *',
                 controller: _designationCtrl,
                 enabled: _isEditing,
+                maxLength: 15,
                 validator: (v) => v!.trim().isEmpty ? 'Required' : null),
 
             // Level picker (1-9)
@@ -202,30 +188,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 label: 'Division *',
                 controller: _divisionCtrl,
                 enabled: _isEditing,
+                maxLength: 13,
                 validator: (v) => v!.trim().isEmpty ? 'Required' : null),
             _buildField(
                 label: 'Headquarter *',
                 controller: _headquarterCtrl,
                 enabled: _isEditing,
+                maxLength: 14,
                 validator: (v) => v!.trim().isEmpty ? 'Required' : null),
 
-            // Department dropdown + Other
-            _buildDepartmentField(),
+            _buildField(
+                label: 'Department *',
+                controller: _departmentCtrl,
+                enabled: _isEditing,
+                maxLength: 12,
+                validator: (v) => v!.trim().isEmpty ? 'Required' : null),
 
             _buildField(
-              label: 'Basic Pay * (5-6 digit)',
+              label: 'Basic Pay * (5-7 digit)',
               controller: _basicPayCtrl,
               enabled: _isEditing,
               keyboardType: TextInputType.number,
               inputFormatters: [
                 FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(6),
+                LengthLimitingTextInputFormatter(7),
               ],
+              maxLength: 7,
               validator: (v) {
                 if (v!.trim().isEmpty) return 'Required';
                 final digits = v.trim().length;
-                if (digits < 5 || digits > 6) {
-                  return 'Must be 5 or 6 digits';
+                if (digits < 5 || digits > 7) {
+                  return 'Must be 5 to 7 digits';
                 }
                 return null;
               },
@@ -330,45 +323,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildDepartmentField() {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 16),
-          child: DropdownButtonFormField<String>(
-            value: _department,
-            decoration: const InputDecoration(
-              labelText: 'Department *',
-              border: OutlineInputBorder(),
-            ),
-            isExpanded: true,
-            items: DepartmentOptions.list
-                .map((d) => DropdownMenuItem(value: d, child: Text(d)))
-                .toList(),
-            onChanged: _isEditing
-                ? (v) => setState(
-                    () => _department = v ?? DepartmentOptions.list.first)
-                : null,
-            validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
-          ),
-        ),
-        if (_department == DepartmentOptions.other)
-          _buildField(
-            label: 'Specify Department *',
-            controller: _departmentOtherCtrl,
-            enabled: _isEditing,
-            validator: (v) {
-              if (_department == DepartmentOptions.other &&
-                  v!.trim().isEmpty) {
-                return 'Required';
-              }
-              return null;
-            },
-          ),
-      ],
-    );
-  }
-
   Widget _buildField({
     required String label,
     required TextEditingController controller,
@@ -377,6 +331,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     List<TextInputFormatter>? inputFormatters,
     String? Function(String?)? validator,
     void Function(String)? onChanged,
+    int? maxLength,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -387,9 +342,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         inputFormatters: inputFormatters,
         validator: validator,
         onChanged: onChanged,
+        maxLength: maxLength,
         decoration: InputDecoration(
           labelText: label,
           border: const OutlineInputBorder(),
+          counterText: maxLength == null ? '' : null,
         ),
       ),
     );
