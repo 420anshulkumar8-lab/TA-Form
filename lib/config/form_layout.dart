@@ -41,19 +41,26 @@ class FormLayout {
   // ════════════════════════════════════════════════════════════════════════
 
   // Row: "शाखा/Branch ____  मंडल/जिला/Division/District ____  सदर मुकाम/HQ ____"
-  static const double branchDivisionHqY = 80.5;
+  // Each of the three fields now has its own Y (they'd been sharing one).
+  static const double branchDivisionHqY = 80.5; // kept for reference/back-compat
+  static const double branchY = 80;
   static const double branchX = 89.1;
   static const double branchWidth = 90;
   static const String branchAlign = 'center';
+  static const double branchFontSize = 12.0;
+  static const double divisionY = 79.5;
   static const double divisionX = 249.4;
   static const double divisionWidth = 130;
   static const String divisionAlign = 'center';
+  static const double divisionFontSize = 11.0;
+  static const double headquartersY = 79.0;
   static const double headquartersX = 456.5;
   static const double headquartersWidth = 90;
   static const String headquartersAlign = 'center';
+  static const double headquartersFontSize = 10.0;
 
   // Row: "...performed by Shri ____ for which allowance ____ 20__ is claimed"
-  static const double shriRowY = 112.9;
+  static const double shriRowY = 111.9;
   static const double employeeNameX = 179.9; // employee's name
   static const double employeeNameWidth = 150;
   static const String employeeNameAlign = 'center';
@@ -65,7 +72,7 @@ class FormLayout {
   static const String yearAlign = 'center';
 
   // Row: "पद/Designation ____ वेतन/Pay ____ नियुक्ति की तारीख/Date of appointment ____"
-  static const double designationRowY = 129.5;
+  static const double designationRowY = 128.5;
   static const double designationX = 88;
   static const double designationWidth = 130;
   static const String designationAlign = 'center';
@@ -77,7 +84,7 @@ class FormLayout {
   static const String dateOfAppointmentAlign = 'center';
 
   // Row: "किस नियम से शासित/Rule by which governed ____"
-  static const double ruleY = 146;
+  static const double ruleY = 145;
   static const double ruleX = 224.9;
   static const double ruleWidth = 200;
   static const String ruleAlign = 'left';
@@ -115,7 +122,7 @@ class FormLayout {
 
   // "मैं प्रमाणित करता हूँ कि श्री ____ बिल में दिये गये समय के लिए..."
   static const double certNameX = 116.0;
-  static const double certNameY = 524.0;
+  static const double certNameY = 523.0;
   static const double certNameWidth = 160;
   static const String certNameAlign = 'left';
 
