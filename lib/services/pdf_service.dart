@@ -315,17 +315,17 @@ class PdfService {
     // measured slot width from the coordinate picker.
     return [
       _overlayTextBox(profile.department, FormLayout.branchX,
-          FormLayout.branchDivisionHqY, 10.0,
+          FormLayout.branchY, FormLayout.branchFontSize,
           width: FormLayout.branchWidth,
           bold: true,
           textAlign: _alignFromString(FormLayout.branchAlign)),
       _overlayTextBox(profile.division, FormLayout.divisionX,
-          FormLayout.branchDivisionHqY, 10.0,
+          FormLayout.divisionY, FormLayout.divisionFontSize,
           width: FormLayout.divisionWidth,
           bold: true,
           textAlign: _alignFromString(FormLayout.divisionAlign)),
       _overlayTextBox(profile.headquarter, FormLayout.headquartersX,
-          FormLayout.branchDivisionHqY, 10.0,
+          FormLayout.headquartersY, FormLayout.headquartersFontSize,
           width: FormLayout.headquartersWidth,
           bold: true,
           textAlign: _alignFromString(FormLayout.headquartersAlign)),
@@ -477,39 +477,60 @@ class PdfService {
       final rowBold = _testBoldForRow(rowIndex);
 
       if (leg.vehicleEntryType == VehicleEntryType.halt) {
-        // ── Halt row: Date stays normal; a single dashed line runs from
-        // Train/Veh No. through to Day/Night (spanning all the columns that
-        // don't apply to a halt), with "Halt at X" centered on top of it.
+        // ── Halt row: Date stays normal; "Halt at X" is centered across
+        // the merged columns, with a solid line filling the LEFT and
+        // RIGHT gaps on either side of the text (line — text — line),
+        // all sitting on the same vertical middle — not a line with the
+        // text floating above it.
         widgets.add(_overlayText(leg.date, FormLayout.dateX, y, fontSize,
             bold: rowBold));
-
-        final dashLineWidth =
-            (FormLayout.dayNightX + 28) - FormLayout.vehicleX;
-        widgets.add(pw.Positioned(
-          left: FormLayout.vehicleX,
-          top: y + (fontSize * 0.9),
-          child: pw.SizedBox(
-            width: dashLineWidth,
-            child: pw.Text(
-              '-' * (dashLineWidth / (fontSize * 0.52)).round(),
-              style: pw.TextStyle(
-                  font: rowBold ? pw.Font.courierBold() : pw.Font.courier(),
-                  fontSize: fontSize),
-              overflow: pw.TextOverflow.clip,
-              maxLines: 1,
-            ),
-          ),
-        ));
 
         final haltText = leg.vehicleNumber.isEmpty
             ? 'Halt'
             : 'Halt at ${leg.vehicleNumber}';
+        final totalWidth =
+            (FormLayout.dayNightX + 28) - FormLayout.vehicleX;
+        final lineY = y + (fontSize * 0.9);
+
+        // Approximate the printed text width (Courier ≈ 0.6× font-size per
+        // character) so the two line segments stop exactly at the text's
+        // edges, with a small breathing gap on each side.
+        final textWidth = haltText.length * fontSize * 0.6;
+        const gap = 6.0;
+        final sideWidth = ((totalWidth - textWidth) / 2 - gap).clamp(0.0, totalWidth);
+
+        pw.Widget dashSegment(double segWidth) => pw.SizedBox(
+              width: segWidth,
+              child: pw.Text(
+                '-' * (segWidth / (fontSize * 0.52)).round(),
+                style: pw.TextStyle(
+                    font: rowBold ? pw.Font.courierBold() : pw.Font.courier(),
+                    fontSize: fontSize),
+                overflow: pw.TextOverflow.clip,
+                maxLines: 1,
+              ),
+            );
+
+        // Left line segment.
+        widgets.add(pw.Positioned(
+          left: FormLayout.vehicleX,
+          top: lineY,
+          child: dashSegment(sideWidth),
+        ));
+        // Right line segment.
+        widgets.add(pw.Positioned(
+          left: FormLayout.vehicleX + sideWidth + textWidth + (gap * 2),
+          top: lineY,
+          child: dashSegment(sideWidth),
+        ));
+
+        // Centered "Halt at X" text, sitting on the same line.
         widgets.add(_overlayTextBox(
           haltText,
           FormLayout.vehicleX,
           y,
           fontSize,
-          width: FormLayout.purposeX - FormLayout.vehicleX,
+          width: totalWidth,
           textAlign: pw.TextAlign.center,
           bold: rowBold,
         ));
