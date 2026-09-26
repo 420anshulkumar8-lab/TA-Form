@@ -8,13 +8,12 @@ on:
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
-    # Yeh line direct code se permission de degi
     permissions:
       contents: write 
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4 # Isko v4 par update kiya gaya hai
+        uses: actions/checkout@v4 
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -27,11 +26,14 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
+      - name: Create Web Files
+        run: flutter create --platforms web .
+
       - name: Build Web App
         run: flutter build web --release --base-href /TA-Form/
 
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4 # Isko bhi v4 par update kiya gaya hai
+        uses: peaceiris/actions-gh-pages@v4 
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./build/web
