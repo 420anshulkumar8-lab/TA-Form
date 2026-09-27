@@ -23,10 +23,12 @@
 
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import '../config/form_layout.dart';
 import '../config/ta_calc_helpers.dart';
 import '../models/trip_model.dart';
@@ -269,13 +271,29 @@ class PdfService {
       ),
     );
 
-    // ── Save to app documents directory ───────────────────────────────────
-    final dir = await getApplicationDocumentsDirectory();
+    // ── Save/deliver the generated PDF ─────────────────────────────────────
     final fileName =
         'TA_${session.month}_${session.year}_${profile.employeeNo}.pdf';
-    final file = File('${dir.path}/$fileName');
-    await file.writeAsBytes(await pdf.save());
-    return file.path;
+    final bytes = await pdf.save();
+
+    if (kIsWeb) {
+      // Browsers have no writable file-system access (dart:io's File is
+      // unavailable on web), so instead of saving to disk we hand the
+      // bytes to `printing`'s Printing.sharePdf, which triggers the
+      // browser's native "Save As" / download flow for the given bytes
+      // and filename. Returning the filename here (rather than a real
+      // path) is fine since nothing on web needs to re-open this "path"
+      // afterwards — the download has already happened by this point.
+      await Printing.sharePdf(bytes: bytes, filename: fileName);
+      return fileName;
+    } else {
+      // Mobile/desktop: save to the app's documents directory as before,
+      // so the returned path can be opened/shared/previewed normally.
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/$fileName');
+      await file.writeAsBytes(bytes);
+      return file.path;
+    }
   }
 
   // ── Flatten Trips → legs, tagging each with its trip's shared Purpose and
