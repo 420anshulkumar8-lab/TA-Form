@@ -107,7 +107,7 @@ class PdfService {
         // Normal (non-extended) height this trip's rows occupy.
         double normalHeight = 0;
         for (int k = i; k < j; k++) {
-          normalHeight += _testRowHeightForRow(k);
+          normalHeight += _testRowHeightForRow(k, flatLegs[k].leg);
         }
         if (_isDynamicModeForTrip(tripIndex)) {
           final purpose = flatLegs[i].purpose;
@@ -128,7 +128,7 @@ class PdfService {
     double cumulativeYWithGaps(double startY, int rowIndex) {
       double y = startY;
       for (int k = 0; k < rowIndex; k++) {
-        y += _testRowHeightForRow(k);
+        y += _testRowHeightForRow(k, flatLegs[k].leg);
         y += extraHeightAfterRow[k] ?? 0.0;
       }
       return y;
@@ -145,7 +145,7 @@ class PdfService {
     {
       double y = FormLayout.firstRowY;
       while (page1Cap < flatLegs.length) {
-        final h = _testRowHeightForRow(page1Cap);
+        final h = _testRowHeightForRow(page1Cap, flatLegs[page1Cap].leg);
         if (y + h > FormLayout.tableBottomY1) break;
         y += h;
         y += extraHeightAfterRow[page1Cap] ?? 0.0;
@@ -170,7 +170,7 @@ class PdfService {
     if (taEndsOnPage2) {
       double h2 = 0;
       for (int k = page1Cap; k < flatLegs.length; k++) {
-        h2 += _testRowHeightForRow(k);
+        h2 += _testRowHeightForRow(k, flatLegs[k].leg);
         h2 += extraHeightAfterRow[k] ?? 0.0;
       }
       taEndY = FormLayout.firstRowY2 + h2 + 4;
@@ -374,7 +374,29 @@ class PdfService {
 
   static double _testFontSizeForRow(int rowIndex) => _fixedFontSize;
 
-  static double _testRowHeightForRow(int rowIndex) => _fixedRowHeight;
+  /// How many words are in this leg's Vehicle/Train field, when it's a
+  /// free-text "Other" mode entry (e.g. "By Road Taxi") — used to decide
+  /// how many lines tall the row needs to be so no word overflows into the
+  /// next row. Train numbers / halts / empty values are always 1 "word"
+  /// (normal single-line height).
+  static int _vehicleWordCount(TripRow leg) {
+    if (leg.vehicleEntryType != VehicleEntryType.other) return 1;
+    final text = leg.vehicleNumber.trim();
+    if (text.isEmpty) return 1;
+    final words = text.split(RegExp(r'\s+'));
+    return words.length.clamp(1, 3);
+  }
+
+  /// Row height for a given absolute row index. Base case is the fixed
+  /// single-line height; when `leg` is provided and its Vehicle/Train field
+  /// is a multi-word free-text entry (e.g. "By Road Taxi"), the row is
+  /// stretched to N× the single-line height (one line per word) so every
+  /// word prints fully inside this row instead of overflowing into the
+  /// next row's Train No. column.
+  static double _testRowHeightForRow(int rowIndex, [TripRow? leg]) {
+    if (leg == null) return _fixedRowHeight;
+    return _fixedRowHeight * _vehicleWordCount(leg);
+  }
 
   // All text is bold now.
   static bool _testBoldForRow(int rowIndex) => true;
@@ -469,8 +491,17 @@ class PdfService {
       final leg = flat.leg;
       // TEST: per-block font/row-height instead of the single shared values.
       fontSize = _testFontSizeForRow(rowIndex);
-      rowHeight = _testRowHeightForRow(rowIndex);
+      rowHeight = _testRowHeightForRow(rowIndex, leg);
       final rowBold = _testBoldForRow(rowIndex);
+      // When the Vehicle/Train "Other" field spans multiple words (hence
+      // multiple lines), this row is TALLER than a normal single-line row.
+      // Every other field in this same row (Date, Time, From, To, Km,
+      // Day/Night) should sit vertically CENTERED within that extra height
+      // instead of stuck at the top — matches how Purpose/Amount center
+      // within their own merged multi-row blocks.
+      final singleLineHeight = _fixedRowHeight;
+      final centerOffset = (rowHeight - singleLineHeight) / 2;
+      final fieldY = y + centerOffset;
 
       if (leg.vehicleEntryType == VehicleEntryType.halt) {
         // ── Halt row: Date stays normal; "Halt at X" is centered across
@@ -478,15 +509,21 @@ class PdfService {
         // RIGHT gaps on either side of the text (line — text — line),
         // all sitting on the same vertical middle — not a line with the
         // text floating above it.
-        widgets.add(_overlayText(leg.date, FormLayout.dateX, y, fontSize,
-            bold: rowBold));
+        widgets.add(_overlayTextBox(leg.date, FormLayout.dateX, fieldY,
+            fontSize,
+            width: FormLayout.vehicleX - FormLayout.dateX - 2,
+            bold: rowBold,
+            textAlign: pw.TextAlign.center));
 
         final haltText = leg.vehicleNumber.isEmpty
             ? 'Halt'
             : 'Halt at ${leg.vehicleNumber}';
         final totalWidth =
             (FormLayout.dayNightX + 28) - FormLayout.vehicleX;
-        final lineY = y + (fontSize * 0.9);
+        // The halt line sits slightly higher than the text's vertical
+        // center so it visually crosses through the middle of the letters
+        // rather than sitting just below them.
+        final lineY = fieldY + (fontSize * 0.75);
 
         // Approximate the printed text width (Courier ≈ 0.6× font-size per
         // character) so the two line segments stop exactly at the text's
@@ -528,7 +565,7 @@ class PdfService {
         widgets.add(_overlayTextBox(
           haltText,
           FormLayout.vehicleX,
-          y,
+          fieldY,
           fontSize,
           width: totalWidth,
           textAlign: pw.TextAlign.center,
@@ -536,13 +573,23 @@ class PdfService {
         ));
       } else {
         // ── Normal journey row
-        widgets.add(_overlayText(leg.date, FormLayout.dateX, y, fontSize,
-            bold: rowBold));
+        // Date/Time/From/To/Km/Day-Night are all CENTER-ALIGNED + bold, and
+        // vertically centered within the row (fieldY) — this matters when
+        // the Vehicle/Train "Other" field below makes the row taller than
+        // one line (see fieldY comment above).
+        widgets.add(_overlayTextBox(leg.date, FormLayout.dateX, fieldY,
+            fontSize,
+            width: FormLayout.vehicleX - FormLayout.dateX - 2,
+            bold: rowBold,
+            textAlign: pw.TextAlign.center));
         // Train/Vehicle No.: if it's a short numeric train number it stays
         // one line; free-text modes (e.g. "By Road", max 3 words) print one
         // WORD per line, top to bottom, so it never runs sideways into the
         // next column — each word forced onto its own line rather than
-        // relying on width-based wrapping.
+        // relying on width-based wrapping. Stays TOP-aligned at `y` (not
+        // `fieldY`) since this field is what defines the row's height in
+        // the first place — the other fields center around it, not the
+        // other way round.
         widgets.add(_overlayMultilineText(
           leg.vehicleNumber.contains(' ')
               ? leg.vehicleNumber.split(RegExp(r'\s+')).join('\n')
@@ -553,23 +600,41 @@ class PdfService {
           width: FormLayout.departureX - FormLayout.vehicleX - 2,
           maxLines: 3,
           bold: rowBold,
+          textAlign: pw.TextAlign.center,
         ));
-        widgets.add(_overlayText(leg.departureTime, FormLayout.departureX, y,
-            fontSize, bold: rowBold));
-        widgets.add(_overlayText(leg.arrivalTime, FormLayout.arrivalX, y,
-            fontSize, bold: rowBold));
+        widgets.add(_overlayTextBox(leg.departureTime, FormLayout.departureX,
+            fieldY, fontSize,
+            width: FormLayout.arrivalX - FormLayout.departureX - 2,
+            bold: rowBold,
+            textAlign: pw.TextAlign.center));
+        widgets.add(_overlayTextBox(leg.arrivalTime, FormLayout.arrivalX,
+            fieldY, fontSize,
+            width: FormLayout.fromX - FormLayout.arrivalX - 2,
+            bold: rowBold,
+            textAlign: pw.TextAlign.center));
         // From: single line, matching the app's 9-char From input limit.
-        widgets.add(_overlayText(leg.fromLocation, FormLayout.fromX, y,
-            fontSize, bold: rowBold));
+        widgets.add(_overlayTextBox(leg.fromLocation, FormLayout.fromX,
+            fieldY, fontSize,
+            width: FormLayout.toX - FormLayout.fromX - 2,
+            bold: rowBold,
+            textAlign: pw.TextAlign.center));
         // To: single line, matching the app's 8-char To input limit.
-        widgets.add(_overlayText(leg.toLocation, FormLayout.toX, y, fontSize,
-            bold: rowBold));
-        widgets.add(_overlayText(
+        widgets.add(_overlayTextBox(leg.toLocation, FormLayout.toX, fieldY,
+            fontSize,
+            width: FormLayout.kmX - FormLayout.toX - 2,
+            bold: rowBold,
+            textAlign: pw.TextAlign.center));
+        widgets.add(_overlayTextBox(
             leg.distanceKm == 0 ? '' : leg.distanceKm.toStringAsFixed(0),
-            FormLayout.kmX, y, fontSize,
-            bold: rowBold));
-        widgets.add(_overlayText(leg.dayNight, FormLayout.dayNightX, y,
-            fontSize, bold: rowBold));
+            FormLayout.kmX, fieldY, fontSize,
+            width: FormLayout.dayNightX - FormLayout.kmX - 2,
+            bold: rowBold,
+            textAlign: pw.TextAlign.center));
+        widgets.add(_overlayTextBox(leg.dayNight, FormLayout.dayNightX,
+            fieldY, fontSize,
+            width: FormLayout.purposeX - FormLayout.dayNightX - 2,
+            bold: rowBold,
+            textAlign: pw.TextAlign.center));
       }
 
       y += rowHeight;
@@ -650,10 +715,12 @@ class PdfService {
           left: FormLayout.amountRsX,
           top: blockTopY,
           child: pw.SizedBox(
+            width: FormLayout.amountPaiseX - FormLayout.amountRsX - 2,
             height: blockHeight,
             child: pw.Center(
               child: pw.Text(
                 amt.rupees,
+                textAlign: pw.TextAlign.center,
                 style: pw.TextStyle(
                     font: rowBold ? pw.Font.courierBold() : pw.Font.courier(),
                     fontSize: fontSize),
@@ -665,10 +732,12 @@ class PdfService {
           left: FormLayout.amountPaiseX,
           top: blockTopY,
           child: pw.SizedBox(
+            width: 30,
             height: blockHeight,
             child: pw.Center(
               child: pw.Text(
                 amt.paise,
+                textAlign: pw.TextAlign.center,
                 style: pw.TextStyle(
                     font: rowBold ? pw.Font.courierBold() : pw.Font.courier(),
                     fontSize: fontSize),
@@ -825,22 +894,32 @@ class PdfService {
       final rowFontSize = _testFontSizeForRow(rowIndex);
       final thisRowHeight = _testRowHeightForRow(rowIndex);
 
-      widgets.add(_overlayText(
+      widgets.add(_overlayTextBox(
           entry.date, FormLayout.contingentDateX, y, rowFontSize,
-          bold: true));
-      widgets.add(_overlayText(
+          width: FormLayout.contingentFromX - FormLayout.contingentDateX - 2,
+          bold: true,
+          textAlign: pw.TextAlign.center));
+      widgets.add(_overlayTextBox(
           entry.fromLocation, FormLayout.contingentFromX, y, rowFontSize,
-          bold: true));
-      widgets.add(_overlayText(
+          width: FormLayout.contingentToX - FormLayout.contingentFromX - 2,
+          bold: true,
+          textAlign: pw.TextAlign.center));
+      widgets.add(_overlayTextBox(
           entry.toLocation, FormLayout.contingentToX, y, rowFontSize,
-          bold: true));
-      widgets.add(_overlayText(
+          width: FormLayout.contingentKmX - FormLayout.contingentToX - 2,
+          bold: true,
+          textAlign: pw.TextAlign.center));
+      widgets.add(_overlayTextBox(
           entry.distanceKm == 0 ? '' : entry.distanceKm.toStringAsFixed(0),
           FormLayout.contingentKmX, y, rowFontSize,
-          bold: true));
-      widgets.add(_overlayText('Rs. ${entry.amount.toStringAsFixed(0)}',
+          width: FormLayout.contingentAmountX - FormLayout.contingentKmX - 2,
+          bold: true,
+          textAlign: pw.TextAlign.center));
+      widgets.add(_overlayTextBox('Rs. ${entry.amount.toStringAsFixed(0)}',
           FormLayout.contingentAmountX, y, rowFontSize,
-          bold: true));
+          width: 80,
+          bold: true,
+          textAlign: pw.TextAlign.center));
       y += thisRowHeight;
     }
 
@@ -898,26 +977,30 @@ class PdfService {
         painter: (canvas, size) {
           final w = size.x;
           final h = size.y;
+          // The spine sits at the RIGHT edge (x = w) — top/bottom ticks and
+          // the middle tip all point LEFT from it (toward x = 0), so the
+          // whole bracket reads as "]" opening to the left, matching the
+          // side it's drawn on (immediately left of Purpose/Amount text).
           canvas
             ..setStrokeColor(PdfColors.black)
             ..setLineWidth(0.8)
-            // Top tick: short horizontal stroke going right from the spine.
-            ..moveTo(0, 0)
-            ..lineTo(tick, 0)
-            // Spine: straight vertical line down the left edge.
-            ..moveTo(0, 0)
-            ..lineTo(0, h)
-            // Bottom tick: short horizontal stroke going right from the spine.
-            ..moveTo(0, h)
-            ..lineTo(tick, h)
+            // Top tick: short horizontal stroke going LEFT from the spine.
+            ..moveTo(w, 0)
+            ..lineTo(w - tick, 0)
+            // Spine: straight vertical line down the right edge.
+            ..moveTo(w, 0)
+            ..lineTo(w, h)
+            // Bottom tick: short horizontal stroke going LEFT from the spine.
+            ..moveTo(w, h)
+            ..lineTo(w - tick, h)
             ..strokePath();
-          // Small centered tip poking right at the vertical midpoint,
-          // like the middle point of a "}" — keeps the bracket reading as
-          // a single connector rather than a plain "[".
+          // Small centered tip poking LEFT at the vertical midpoint, like
+          // the middle point of a "}" — keeps the bracket reading as a
+          // single connector rather than a plain "[".
           canvas
-            ..moveTo(0, h / 2 - 2)
-            ..lineTo(w, h / 2)
-            ..lineTo(0, h / 2 + 2)
+            ..moveTo(w, h / 2 - 2)
+            ..lineTo(0, h / 2)
+            ..lineTo(w, h / 2 + 2)
             ..strokePath();
         },
       ),

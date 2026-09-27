@@ -17,54 +17,25 @@ class TaCalculationService {
   }
 
   // ── Auto-suggest helpers ──────────────────────────────────────────────────
+  // All auto-suggestion (Date, From, To) is disabled: a newly added row
+  // always starts fully empty, showing the plain placeholder text instead
+  // of copying/pre-filling values from adjacent rows.
 
-  static String suggestFromForNewLeg(List<TripRow> existingLegs) {
-    if (existingLegs.isEmpty) return '';
-    return existingLegs.last.toLocation;
-  }
+  static String suggestFromForNewLeg(List<TripRow> existingLegs) => '';
 
-  static String suggestToForNewLeg(List<TripRow> existingLegs) {
-    if (existingLegs.isEmpty) return '';
-    return existingLegs.first.fromLocation;
-  }
+  static String suggestToForNewLeg(List<TripRow> existingLegs) => '';
 
-  // Date auto-suggestion is disabled: a newly added row always starts with
-  // an empty date (showing the plain "Date" placeholder) instead of
-  // copying/pre-filling the first leg's date.
   static String suggestDateForNewLeg(List<TripRow> existingLegs) => '';
 
   static TripRow buildSuggestedLeg(List<TripRow> existingLegs) {
-    final sf = suggestFromForNewLeg(existingLegs);
-    final st = suggestToForNewLeg(existingLegs);
-    return TripRow(
-      fromLocation: sf,
-      fromIsSuggested: sf.isNotEmpty,
-      toLocation: st,
-      toIsSuggested: st.isNotEmpty,
-      date: '',
-      dateIsSuggested: false,
-    );
+    return const TripRow(); // fully empty — every field at its default
   }
 
-  static List<TripRow> recalculateChain(List<TripRow> legs) {
-    if (legs.isEmpty) return legs;
-    final updated = List<TripRow>.from(legs);
-    final tripStartFrom = updated.first.fromLocation;
-
-    for (int i = 1; i < updated.length; i++) {
-      final prev = updated[i - 1];
-      var current = updated[i];
-
-      if (current.fromIsSuggested) {
-        current = current.copyWith(fromLocation: prev.toLocation);
-      }
-      if (i == updated.length - 1 && current.toIsSuggested) {
-        current = current.copyWith(toLocation: tripStartFrom);
-      }
-      updated[i] = current;
-    }
-    return updated;
-  }
+  // No-op now that suggestions are disabled — rows no longer carry a
+  // fromIsSuggested/toIsSuggested flag that needs re-syncing after edits.
+  // Kept (returning legs unchanged) so existing call sites don't need to
+  // change.
+  static List<TripRow> recalculateChain(List<TripRow> legs) => legs;
 
   // ── Date-amount map helpers ───────────────────────────────────────────────
 
