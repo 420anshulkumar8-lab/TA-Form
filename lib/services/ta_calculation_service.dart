@@ -28,22 +28,21 @@ class TaCalculationService {
     return existingLegs.first.fromLocation;
   }
 
-  static String suggestDateForNewLeg(List<TripRow> existingLegs) {
-    if (existingLegs.isEmpty) return '';
-    return existingLegs.first.date;
-  }
+  // Date auto-suggestion is disabled: a newly added row always starts with
+  // an empty date (showing the plain "Date" placeholder) instead of
+  // copying/pre-filling the first leg's date.
+  static String suggestDateForNewLeg(List<TripRow> existingLegs) => '';
 
   static TripRow buildSuggestedLeg(List<TripRow> existingLegs) {
     final sf = suggestFromForNewLeg(existingLegs);
     final st = suggestToForNewLeg(existingLegs);
-    final sd = suggestDateForNewLeg(existingLegs);
     return TripRow(
       fromLocation: sf,
       fromIsSuggested: sf.isNotEmpty,
       toLocation: st,
       toIsSuggested: st.isNotEmpty,
-      date: sd,
-      dateIsSuggested: sd.isNotEmpty,
+      date: '',
+      dateIsSuggested: false,
     );
   }
 
@@ -97,6 +96,80 @@ class TaCalculationService {
     final y = int.tryParse(parts[2]);
     if (d == null || m == null || y == null) return null;
     return DateTime(y, m, d);
+  }
+
+  // ── Date-sequence validation ──────────────────────────────────────────────
+
+  /// Flattens every trip's legs, in on-screen top-to-bottom order, into a
+  /// single ordered list of dates (skipping empty ones — a row the user
+  /// hasn't filled in yet doesn't participate in the sequence check).
+  static List<String> _flattenDatesInOrder(List<TripGroup> trips) {
+    final dates = <String>[];
+    for (final trip in trips) {
+      for (final leg in trip.legs) {
+        if (leg.date.isNotEmpty) dates.add(leg.date);
+      }
+    }
+    return dates;
+  }
+
+  /// Checks whether replacing the date at the given flattened position with
+  /// [newDate] would keep the WHOLE form's dates non-decreasing top to
+  /// bottom (equal dates on consecutive rows are allowed; going backwards
+  /// is not). [trips] should be the CURRENT (pre-edit) state; [tripIndex]/
+  /// [legIndex] identify which row is being edited.
+  ///
+  /// Returns null if the change is valid, or a user-facing error message if
+  /// it would break the sequence.
+  static String? validateDateSequence({
+    required List<TripGroup> trips,
+    required int tripIndex,
+    required int legIndex,
+    required String newDate,
+  }) {
+    if (newDate.isEmpty) return null; // clearing a date is always allowed
+    final newParsed = _parseDate(newDate);
+    if (newParsed == null) return null; // malformed — let other validation handle it
+
+    // Find this row's position in the flattened (skipping-empty) order by
+    // walking the same top-to-bottom structure, tracking the previous and
+    // next non-empty dates around this specific row.
+    String? prevDate;
+    String? nextDate;
+    bool foundSelf = false;
+    for (int t = 0; t < trips.length; t++) {
+      final legs = trips[t].legs;
+      for (int l = 0; l < legs.length; l++) {
+        final isSelf = t == tripIndex && l == legIndex;
+        if (isSelf) {
+          foundSelf = true;
+          continue;
+        }
+        final d = legs[l].date;
+        if (d.isEmpty) continue;
+        if (!foundSelf) {
+          prevDate = d; // keeps getting overwritten until we pass self
+        } else if (nextDate == null) {
+          nextDate = d; // first non-empty date AFTER self
+        }
+      }
+    }
+
+    if (prevDate != null) {
+      final prevParsed = _parseDate(prevDate);
+      if (prevParsed != null && newParsed.isBefore(prevParsed)) {
+        return 'Date must not be earlier than the previous row\'s date '
+            '($prevDate).';
+      }
+    }
+    if (nextDate != null) {
+      final nextParsed = _parseDate(nextDate);
+      if (nextParsed != null && newParsed.isAfter(nextParsed)) {
+        return 'Date must not be later than the next row\'s date '
+            '($nextDate).';
+      }
+    }
+    return null;
   }
 
   /// Rebuilds the dateAmounts map: keeps existing user-selected values,

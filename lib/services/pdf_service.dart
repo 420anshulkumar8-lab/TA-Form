@@ -223,8 +223,6 @@ class PdfService {
                 extraHeightAfterRow: extraHeightAfterRow),
             ..._amountOverlay(page1Legs, rowHeight, fontSize, FormLayout.firstRowY,
                 extraHeightAfterRow: extraHeightAfterRow),
-            if (!taEndsOnPage2 && taData != null)
-              ..._totalOverlay(taData, taEndY, fontSize),
             if (contingentOnPage1 && contingentData != null)
               ..._contingentOverlay(contingentData, contingentStartYFinal,
                   contingentRowHeight, contingentFontSize),
@@ -253,8 +251,6 @@ class PdfService {
                 rowOffset: page1Cap, extraHeightAfterRow: extraHeightAfterRow),
             ..._amountOverlay(page2Legs, rowHeight, fontSize, FormLayout.firstRowY2,
                 rowOffset: page1Cap, extraHeightAfterRow: extraHeightAfterRow),
-            if (taEndsOnPage2 && taData != null)
-              ..._totalOverlay(taData, taEndY, fontSize),
             if (!contingentOnPage1 && contingentData != null)
               ..._contingentOverlay(contingentData, contingentStartYFinal,
                   contingentRowHeight, contingentFontSize),
@@ -263,7 +259,7 @@ class PdfService {
               profile.name,
               FormLayout.certNameX,
               FormLayout.certNameY,
-              10.0,
+              FormLayout.profileFieldFontSize,
               width: FormLayout.certNameWidth,
               bold: true,
               textAlign: _alignFromString(FormLayout.certNameAlign),
@@ -311,40 +307,40 @@ class PdfService {
         ? session.year.substring(session.year.length - 2)
         : session.year;
 
-    // All header fields: fixed 10pt, bold, each centered within its
-    // measured slot width from the coordinate picker.
+    // All header fields: fixed 11pt, bold, centered within their slot width.
+    const fs = FormLayout.profileFieldFontSize;
     return [
       _overlayTextBox(profile.department, FormLayout.branchX,
-          FormLayout.branchY, FormLayout.branchFontSize,
+          FormLayout.branchY, fs,
           width: FormLayout.branchWidth,
           bold: true,
           textAlign: _alignFromString(FormLayout.branchAlign)),
       _overlayTextBox(profile.division, FormLayout.divisionX,
-          FormLayout.divisionY, FormLayout.divisionFontSize,
+          FormLayout.divisionY, fs,
           width: FormLayout.divisionWidth,
           bold: true,
           textAlign: _alignFromString(FormLayout.divisionAlign)),
       _overlayTextBox(profile.headquarter, FormLayout.headquartersX,
-          FormLayout.headquartersY, FormLayout.headquartersFontSize,
+          FormLayout.headquartersY, fs,
           width: FormLayout.headquartersWidth,
           bold: true,
           textAlign: _alignFromString(FormLayout.headquartersAlign)),
       _overlayTextBox(profile.name, FormLayout.employeeNameX,
-          FormLayout.shriRowY, 10.0,
+          FormLayout.shriRowY, fs,
           width: FormLayout.employeeNameWidth,
           bold: true,
           textAlign: _alignFromString(FormLayout.employeeNameAlign)),
       _overlayTextBox(monthNameToShort(session.month), FormLayout.monthX,
-          FormLayout.shriRowY, 10.0,
+          FormLayout.shriRowY, fs,
           width: FormLayout.monthWidth,
           bold: true,
           textAlign: _alignFromString(FormLayout.monthAlign)),
-      _overlayTextBox(yearShort, FormLayout.yearX, FormLayout.shriRowY, 10.0,
+      _overlayTextBox(yearShort, FormLayout.yearX, FormLayout.yearY, fs,
           width: FormLayout.yearWidth,
           bold: true,
           textAlign: _alignFromString(FormLayout.yearAlign)),
       _overlayTextBox(profile.designation, FormLayout.designationX,
-          FormLayout.designationRowY, 10.0,
+          FormLayout.designationRowY, fs,
           width: FormLayout.designationWidth,
           bold: true,
           textAlign: _alignFromString(FormLayout.designationAlign)),
@@ -352,19 +348,19 @@ class PdfService {
         profile.basicPay > 0 ? profile.basicPay.toStringAsFixed(0) : '',
         FormLayout.payX,
         FormLayout.designationRowY,
-        10.0,
+        fs,
         width: FormLayout.payWidth,
         bold: true,
         textAlign: _alignFromString(FormLayout.payAlign),
       ),
       _overlayTextBox(profile.dateOfAppointment,
-          FormLayout.dateOfAppointmentX, FormLayout.designationRowY, 10.0,
+          FormLayout.dateOfAppointmentX, FormLayout.dateOfAppointmentY, fs,
           width: FormLayout.dateOfAppointmentWidth,
           bold: true,
           textAlign: _alignFromString(FormLayout.dateOfAppointmentAlign)),
       // "Rule by which governed" — fixed text (not from profile).
       _overlayTextBox(FormLayout.ruleText, FormLayout.ruleX,
-          FormLayout.ruleY, 10.0,
+          FormLayout.ruleY, fs,
           width: FormLayout.ruleWidth,
           bold: true,
           textAlign: _alignFromString(FormLayout.ruleAlign)),
@@ -499,29 +495,33 @@ class PdfService {
         const gap = 6.0;
         final sideWidth = ((totalWidth - textWidth) / 2 - gap).clamp(0.0, totalWidth);
 
-        pw.Widget dashSegment(double segWidth) => pw.SizedBox(
-              width: segWidth,
-              child: pw.Text(
-                '-' * (segWidth / (fontSize * 0.52)).round(),
-                style: pw.TextStyle(
-                    font: rowBold ? pw.Font.courierBold() : pw.Font.courier(),
-                    fontSize: fontSize),
-                overflow: pw.TextOverflow.clip,
-                maxLines: 1,
-              ),
+        // A real solid vector line (not a run of '-' text characters —
+        // Courier's hyphen glyph has gaps between repeats, so a long run
+        // of them prints as a dotted/dashed line instead of one solid
+        // stroke). This is a single unbroken line segment of `segWidth`.
+        pw.Widget solidLine(double segWidth) => pw.CustomPaint(
+              size: PdfPoint(segWidth, 1),
+              painter: (canvas, size) {
+                canvas
+                  ..setStrokeColor(PdfColors.black)
+                  ..setLineWidth(0.8)
+                  ..moveTo(0, 0)
+                  ..lineTo(size.x, 0)
+                  ..strokePath();
+              },
             );
 
         // Left line segment.
         widgets.add(pw.Positioned(
           left: FormLayout.vehicleX,
           top: lineY,
-          child: dashSegment(sideWidth),
+          child: solidLine(sideWidth),
         ));
         // Right line segment.
         widgets.add(pw.Positioned(
           left: FormLayout.vehicleX + sideWidth + textWidth + (gap * 2),
           top: lineY,
-          child: dashSegment(sideWidth),
+          child: solidLine(sideWidth),
         ));
 
         // Centered "Halt at X" text, sitting on the same line.
@@ -558,28 +558,12 @@ class PdfService {
             fontSize, bold: rowBold));
         widgets.add(_overlayText(leg.arrivalTime, FormLayout.arrivalX, y,
             fontSize, bold: rowBold));
-        // From: wraps at ~9 chars/line, up to 3 lines (27 chars total),
-        // matching the app's 27-char From input limit.
-        widgets.add(_overlayMultilineText(
-          leg.fromLocation,
-          FormLayout.fromX,
-          y,
-          fontSize,
-          width: 9 * fontSize * 0.6,
-          maxLines: 3,
-          bold: rowBold,
-        ));
-        // To: wraps at ~8 chars/line, up to 3 lines (24 chars total),
-        // matching the app's 24-char To input limit.
-        widgets.add(_overlayMultilineText(
-          leg.toLocation,
-          FormLayout.toX,
-          y,
-          fontSize,
-          width: 8 * fontSize * 0.6,
-          maxLines: 3,
-          bold: rowBold,
-        ));
+        // From: single line, matching the app's 9-char From input limit.
+        widgets.add(_overlayText(leg.fromLocation, FormLayout.fromX, y,
+            fontSize, bold: rowBold));
+        // To: single line, matching the app's 8-char To input limit.
+        widgets.add(_overlayText(leg.toLocation, FormLayout.toX, y, fontSize,
+            bold: rowBold));
         widgets.add(_overlayText(
             leg.distanceKm == 0 ? '' : leg.distanceKm.toStringAsFixed(0),
             FormLayout.kmX, y, fontSize,
@@ -810,18 +794,6 @@ class PdfService {
     return widgets;
   }
 
-  // ── Grand total row (printed right after the last TA leg) ────────────────
-  static List<pw.Widget> _totalOverlay(
-      TaFormData taData, double y, double fontSize) {
-    final amt = _splitAmount(taData.grandTotal);
-    return [
-      _overlayTextBox('Grand Total', FormLayout.purposeX, y, fontSize,
-          width: FormLayout.purposeWidth, bold: true),
-      _overlayText(amt.rupees, FormLayout.amountRsX, y, fontSize, bold: true),
-      _overlayText(amt.paise, FormLayout.amountPaiseX, y, fontSize, bold: true),
-    ];
-  }
-
   // ── Contingent bill rows — printed directly under the TA table on the
   //    same scanned page (no separate blank page). Row height/font size
   //    compact automatically as entry count grows. ──────────────────────────
@@ -898,19 +870,26 @@ class PdfService {
     return _Amount(rs.toString(), paise.toString().padLeft(2, '0'));
   }
 
-  // ── Drawn curly-bracket "}" connector ──────────────────────────────────────
-  // A single `}` glyph doesn't stretch to fill an arbitrary height — its
-  // curve shape is fixed by the font, so on a 3+ row merge it either looks
-  // too small or visually disconnected from the rows it's meant to span.
-  // This draws an actual vector bracket shape instead, built from two
-  // symmetric quadratic curves meeting at a middle point, so it always
-  // spans exactly `height` regardless of how many rows are merged.
+  // ── Drawn square-bracket "]" connector ──────────────────────────────────────
+  // A single `}`/`]` glyph doesn't stretch to fill an arbitrary height — its
+  // shape is fixed by the font, so on a 3+ row merge it either looks too
+  // small or visually disconnected from the rows it's meant to span. This
+  // draws an actual vector bracket shape instead, so it always spans
+  // exactly `height` regardless of how many rows are merged.
+  //
+  // Shaped like "]" — a straight vertical spine with short horizontal ticks
+  // at the top and bottom — rather than a curly "(" bracket. The curly
+  // version's wide curve pokes deep into the column to its right; this
+  // square version keeps its whole footprint within `width`, so it never
+  // intrudes into the Purpose/Amount text next to it.
   static pw.Widget _drawnBracket({
     required double left,
     required double top,
     required double height,
   }) {
-    const width = 9.0; // how far the bracket's tip pokes out to the left
+    const width = 5.0; // total horizontal footprint — kept tight so it
+    // never reaches into the column text sitting to its right
+    const tick = 3.0; // length of the top/bottom horizontal ticks
     return pw.Positioned(
       left: left,
       top: top,
@@ -919,15 +898,26 @@ class PdfService {
         painter: (canvas, size) {
           final w = size.x;
           final h = size.y;
-          final midY = h / 2;
           canvas
             ..setStrokeColor(PdfColors.black)
             ..setLineWidth(0.8)
-            // Top half: from top-left down to the middle tip
-            ..moveTo(w, 0)
-            ..curveTo(w * 0.15, 0, w * 0.15, midY * 0.85, 0, midY)
-            // Bottom half: from the middle tip down to bottom-left
-            ..curveTo(w * 0.15, midY * 1.15, w * 0.15, h, w, h)
+            // Top tick: short horizontal stroke going right from the spine.
+            ..moveTo(0, 0)
+            ..lineTo(tick, 0)
+            // Spine: straight vertical line down the left edge.
+            ..moveTo(0, 0)
+            ..lineTo(0, h)
+            // Bottom tick: short horizontal stroke going right from the spine.
+            ..moveTo(0, h)
+            ..lineTo(tick, h)
+            ..strokePath();
+          // Small centered tip poking right at the vertical midpoint,
+          // like the middle point of a "}" — keeps the bracket reading as
+          // a single connector rather than a plain "[".
+          canvas
+            ..moveTo(0, h / 2 - 2)
+            ..lineTo(w, h / 2)
+            ..lineTo(0, h / 2 + 2)
             ..strokePath();
         },
       ),
