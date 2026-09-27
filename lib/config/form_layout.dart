@@ -45,12 +45,11 @@ class FormLayout {
   static const double profileFieldFontSize = 11.0;
 
   // Row: "शाखा/Branch ____  मंडल/जिला/Division/District ____  सदर मुकाम/HQ ____"
-  // All three fields now share the same Y (78).
-  static const double branchY = 78;
+  static const double branchY = 77; // was 78, moved up 1pt
   static const double branchX = 89.1;
   static const double branchWidth = 90;
   static const String branchAlign = 'center';
-  static const double divisionY = 78;
+  static const double divisionY = 77.5; // was 78, moved up 0.5pt
   static const double divisionX = 249.4;
   static const double divisionWidth = 130;
   static const String divisionAlign = 'center';
@@ -67,7 +66,7 @@ class FormLayout {
   static const double monthX = 387.6; // month name (e.g. "June")
   static const double monthWidth = 100;
   static const String monthAlign = 'center';
-  static const double yearX = 458.6; // last 2 digits of year
+  static const double yearX = 459.6; // was 458.6, moved right 1pt
   static const double yearY = 111.9; // unchanged (no Y shift requested)
   static const double yearWidth = 40;
   static const String yearAlign = 'center';
