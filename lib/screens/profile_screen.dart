@@ -163,7 +163,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 label: 'Name *',
                 controller: _nameCtrl,
                 enabled: _isEditing,
-                maxLength: 25,
+                maxLength: 23,
                 validator: (v) => v!.trim().isEmpty ? 'Required' : null),
             _buildField(
                 label: 'Designation *',
@@ -188,20 +188,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 label: 'Division *',
                 controller: _divisionCtrl,
                 enabled: _isEditing,
-                maxLength: 13,
+                maxLength: 12,
                 validator: (v) => v!.trim().isEmpty ? 'Required' : null),
             _buildField(
                 label: 'Headquarter *',
                 controller: _headquarterCtrl,
                 enabled: _isEditing,
-                maxLength: 14,
+                maxLength: 13,
                 validator: (v) => v!.trim().isEmpty ? 'Required' : null),
 
             _buildField(
                 label: 'Department *',
                 controller: _departmentCtrl,
                 enabled: _isEditing,
-                maxLength: 12,
+                maxLength: 11,
                 validator: (v) => v!.trim().isEmpty ? 'Required' : null),
 
             _buildField(

@@ -141,6 +141,28 @@ class _TaFormScreenState extends State<TaFormScreen> {
     _saveDraft();
   }
 
+  /// Date-specific update: rejects the change (with an error message)
+  /// instead of applying it if it would break the whole-form top-to-bottom
+  /// date sequence (dates must never go backwards row over row; equal
+  /// dates on consecutive rows are fine).
+  void _updateLegDate(int tripIndex, int legIndex, String newDate) {
+    final error = TaCalculationService.validateDateSequence(
+      trips: _trips,
+      tripIndex: tripIndex,
+      legIndex: legIndex,
+      newDate: newDate,
+    );
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(error),
+        backgroundColor: Colors.red,
+      ));
+      return;
+    }
+    _updateLeg(tripIndex, legIndex,
+        (r) => r.copyWith(date: newDate, dateIsSuggested: false));
+  }
+
   void _updateTripPurpose(int tripIndex, String purpose) {
     setState(() => _trips[tripIndex] = _trips[tripIndex].copyWith(purpose: purpose));
     _saveDraft();
@@ -266,7 +288,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
   Future<bool> _confirmFinal() async {
     if (!_hasTaData && !_hasContingentData) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Kripya kam se kam ek entry bharein.'),
+        content: Text('Please add at least one entry before continuing.'),
         backgroundColor: Colors.red,
       ));
       return false;
@@ -329,7 +351,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
   Future<void> _openPreview() async {
     if (!_hasTaData && !_hasContingentData) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Kripya kam se kam ek entry bharein.'),
+        content: Text('Please add at least one entry before continuing.'),
         backgroundColor: Colors.red,
       ));
       return;
@@ -483,7 +505,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
                                   color: Theme.of(context).colorScheme.primary),
                               const SizedBox(width: 8),
                               Text(
-                                'Add Trip ${_trips.length + 1} Details',
+                                'Add Journey ${_trips.length + 1} Details',
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 15,
@@ -614,7 +636,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
                       size: 18, color: theme.colorScheme.primary),
                   const SizedBox(width: 8),
                   Text(
-                    'Trip ${tripIndex + 1} Details',
+                    'Journey ${tripIndex + 1} Details',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 15,
@@ -887,8 +909,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
             year: _yearNum,
             enabled: _isEditing,
             isSuggested: leg.dateIsSuggested,
-            onChanged: (v) => _updateLeg(tripIndex, legIndex,
-                (r) => r.copyWith(date: v, dateIsSuggested: false)),
+            onChanged: (v) => _updateLegDate(tripIndex, legIndex, v),
           ),
 
           if (isHalt)
@@ -1001,7 +1022,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
               enabled: _isEditing,
               isSuggested: leg.fromIsSuggested,
               hintText: 'From',
-              maxLength: 27,
+              maxLength: 9,
               onChanged: (v) => _updateLeg(tripIndex, legIndex,
                   (r) => r.copyWith(fromLocation: v, fromIsSuggested: false)),
             ),
@@ -1012,7 +1033,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
               enabled: _isEditing,
               isSuggested: leg.toIsSuggested,
               hintText: 'To',
-              maxLength: 24,
+              maxLength: 8,
               onChanged: (v) => _updateLeg(tripIndex, legIndex,
                   (r) => r.copyWith(toLocation: v, toIsSuggested: false)),
             ),
@@ -1112,7 +1133,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
               label: 'From',
               enabled: _isEditing,
               hintText: 'From',
-              maxLength: 27,
+              maxLength: 9,
               onChanged: (v) =>
                   _updateContingent(i, (e) => e.copyWith(fromLocation: v))),
           EditableTextCell(
@@ -1121,7 +1142,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
               label: 'To',
               enabled: _isEditing,
               hintText: 'To',
-              maxLength: 24,
+              maxLength: 8,
               onChanged: (v) =>
                   _updateContingent(i, (e) => e.copyWith(toLocation: v))),
           EditableTextCell(
