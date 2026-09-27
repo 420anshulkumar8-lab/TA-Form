@@ -272,7 +272,7 @@ class EditableDateCell extends StatelessWidget {
       isSuggested: isSuggested && value.isNotEmpty,
       onTap: () => _pick(context),
       child: Text(
-        showHint ? 'DD/MM' : value,
+        showHint ? 'Date' : value,
         style: showHint
             ? TextStyle(
                 color: Theme.of(context).colorScheme.onSurface.withOpacity(0.28),
