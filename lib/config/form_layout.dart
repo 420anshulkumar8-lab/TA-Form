@@ -40,27 +40,27 @@ class FormLayout {
   // PAGE 1 — Header strip (employee / posting details)
   // ════════════════════════════════════════════════════════════════════════
 
+  // All profile-sourced header fields print at one uniform size/weight/
+  // alignment: 11pt, bold, centered.
+  static const double profileFieldFontSize = 11.0;
+
   // Row: "शाखा/Branch ____  मंडल/जिला/Division/District ____  सदर मुकाम/HQ ____"
-  // Each of the three fields now has its own Y (they'd been sharing one).
-  static const double branchDivisionHqY = 80.5; // kept for reference/back-compat
-  static const double branchY = 80;
+  // All three fields now share the same Y (78).
+  static const double branchY = 78;
   static const double branchX = 89.1;
   static const double branchWidth = 90;
   static const String branchAlign = 'center';
-  static const double branchFontSize = 12.0;
-  static const double divisionY = 79.5;
+  static const double divisionY = 78;
   static const double divisionX = 249.4;
   static const double divisionWidth = 130;
   static const String divisionAlign = 'center';
-  static const double divisionFontSize = 11.0;
-  static const double headquartersY = 79.0;
+  static const double headquartersY = 78;
   static const double headquartersX = 456.5;
   static const double headquartersWidth = 90;
   static const String headquartersAlign = 'center';
-  static const double headquartersFontSize = 10.0;
 
   // Row: "...performed by Shri ____ for which allowance ____ 20__ is claimed"
-  static const double shriRowY = 111.9;
+  static const double shriRowY = 109.9; // was 111.9, moved up 2pt
   static const double employeeNameX = 179.9; // employee's name
   static const double employeeNameWidth = 150;
   static const String employeeNameAlign = 'center';
@@ -68,11 +68,12 @@ class FormLayout {
   static const double monthWidth = 100;
   static const String monthAlign = 'center';
   static const double yearX = 458.6; // last 2 digits of year
+  static const double yearY = 111.9; // unchanged (no Y shift requested)
   static const double yearWidth = 40;
   static const String yearAlign = 'center';
 
   // Row: "पद/Designation ____ वेतन/Pay ____ नियुक्ति की तारीख/Date of appointment ____"
-  static const double designationRowY = 128.5;
+  static const double designationRowY = 126.5; // was 128.5, moved up 2pt
   static const double designationX = 88;
   static const double designationWidth = 130;
   static const String designationAlign = 'center';
@@ -80,16 +81,17 @@ class FormLayout {
   static const double payWidth = 90;
   static const String payAlign = 'center';
   static const double dateOfAppointmentX = 446.6;
+  static const double dateOfAppointmentY = 127.5; // was 128.5, moved up 1pt
   static const double dateOfAppointmentWidth = 90;
   static const String dateOfAppointmentAlign = 'center';
 
   // Row: "किस नियम से शासित/Rule by which governed ____"
-  static const double ruleY = 145;
+  static const double ruleY = 143; // was 145, moved up 2pt
   static const double ruleX = 224.9;
   static const double ruleWidth = 200;
-  static const String ruleAlign = 'left';
+  static const String ruleAlign = 'center';
   // Fixed value printed for this field — not sourced from employee profile.
-  // Keep this at or under 50 characters (may be replaced with a specific
+  // Keep this at or under 45 characters (may be replaced with a specific
   // rule reference later).
   static const String ruleText = 'Railway Rule';
 
