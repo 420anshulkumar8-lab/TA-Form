@@ -1,4 +1,5 @@
 // lib/screens/ta_form_screen.dart
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -396,6 +397,17 @@ class _TaFormScreenState extends State<TaFormScreen> {
       if (!mounted) return;
       setState(() => _isSaving = false);
 
+      if (kIsWeb) {
+        // Web has no real file path to preview from — PdfService already
+        // triggered the browser's download for these bytes, so just let
+        // the user know it's done instead of trying to open a preview
+        // screen from a path that doesn't exist on disk.
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('PDF downloaded.'),
+        ));
+        return;
+      }
+
       final finalized = await Navigator.push<bool>(
         context,
         MaterialPageRoute(
@@ -428,6 +440,15 @@ class _TaFormScreenState extends State<TaFormScreen> {
       HiveService.saveSession(widget.session);
       if (mounted) {
         setState(() => _isSaving = false);
+        if (kIsWeb) {
+          // Same reasoning as the preview flow above: on web the browser
+          // download already happened inside PdfService, and pdfPath isn't
+          // a real openable file path, so skip the preview screen.
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('PDF downloaded.'),
+          ));
+          return;
+        }
         Navigator.push(context, MaterialPageRoute(
             builder: (_) => PdfPreviewScreen(
                 pdfPath: pdfPath,
