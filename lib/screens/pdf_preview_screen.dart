@@ -54,6 +54,7 @@ class PdfPreviewScreen extends StatelessWidget {
         allowPrinting: false,
         allowSharing: false,
         canChangeOrientation: false,
+        canChangePageFormat: false,
         canDebug: false,
         pdfFileName: 'railway_ta_form.pdf',
       ),

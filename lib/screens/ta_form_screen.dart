@@ -135,6 +135,12 @@ class _TaFormScreenState extends State<TaFormScreen> {
       final trip = _trips[tripIndex];
       final legs = List<TripRow>.from(trip.legs);
       legs[legIndex] = fn(legs[legIndex]);
+      // Day/Night is fully automatic (locked): recompute from Dep/Arr.
+      final l = legs[legIndex];
+      legs[legIndex] = l.copyWith(
+        dayNight: TaCalculationService.dayNightFor(
+            l.departureTime, l.arrivalTime),
+      );
       final rechained = TaCalculationService.recalculateChain(legs);
       _trips[tripIndex] = trip.copyWith(legs: rechained);
       _syncDateAmounts();
@@ -258,7 +264,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
     final p = _profile;
     widget.session.formDataTa = _hasTaData
         ? TaFormData(
-            employeeId: p.employeeNo,
+            employeeId: TaSession.ownerId,
             month: widget.session.month,
             year: widget.session.year,
             trips: _trips,
@@ -269,7 +275,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
         : null;
     widget.session.formDataContingent = _hasContingentData
         ? ContingentFormData(
-            employeeId: p.employeeNo,
+            employeeId: TaSession.ownerId,
             month: widget.session.month,
             year: widget.session.year,
             entries: _contingentEntries,
@@ -318,7 +324,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
     final p = _profile;
     widget.session.formDataTa = _hasTaData
         ? TaFormData(
-            employeeId: p.employeeNo,
+            employeeId: TaSession.ownerId,
             month: widget.session.month,
             year: widget.session.year,
             trips: _trips,
@@ -329,7 +335,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
         : null;
     widget.session.formDataContingent = _hasContingentData
         ? ContingentFormData(
-            employeeId: p.employeeNo,
+            employeeId: TaSession.ownerId,
             month: widget.session.month,
             year: widget.session.year,
             entries: _contingentEntries,
@@ -337,6 +343,9 @@ class _TaFormScreenState extends State<TaFormScreen> {
             status: 'submitted',
           ).toJson()
         : null;
+    // Freeze the profile as it is right now, so any later profile edits
+    // can never alter this finalized TA's preview/PDF.
+    widget.session.profileSnapshot = p.toJson();
     widget.session.status = SessionStatus.submitted;
     widget.session.lastUpdated = DateTime.now().toIso8601String();
     await HiveService.saveSession(widget.session);
@@ -370,7 +379,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
         status: widget.session.status,
         formDataTa: _hasTaData
             ? TaFormData(
-                employeeId: p.employeeNo,
+                employeeId: TaSession.ownerId,
                 month: widget.session.month,
                 year: widget.session.year,
                 trips: _trips,
@@ -381,7 +390,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
             : null,
         formDataContingent: _hasContingentData
             ? ContingentFormData(
-                employeeId: p.employeeNo,
+                employeeId: TaSession.ownerId,
                 month: widget.session.month,
                 year: widget.session.year,
                 entries: _contingentEntries,
@@ -1044,6 +1053,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
               isSuggested: leg.fromIsSuggested,
               hintText: 'From',
               maxLength: 9,
+              allowDash: true,
               onChanged: (v) => _updateLeg(tripIndex, legIndex,
                   (r) => r.copyWith(fromLocation: v, fromIsSuggested: false)),
             ),
@@ -1055,6 +1065,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
               isSuggested: leg.toIsSuggested,
               hintText: 'To',
               maxLength: 8,
+              allowDash: true,
               onChanged: (v) => _updateLeg(tripIndex, legIndex,
                   (r) => r.copyWith(toLocation: v, toIsSuggested: false)),
             ),
@@ -1155,6 +1166,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
               enabled: _isEditing,
               hintText: 'From',
               maxLength: 9,
+              allowDash: true,
               onChanged: (v) =>
                   _updateContingent(i, (e) => e.copyWith(fromLocation: v))),
           EditableTextCell(
@@ -1164,6 +1176,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
               enabled: _isEditing,
               hintText: 'To',
               maxLength: 8,
+              allowDash: true,
               onChanged: (v) =>
                   _updateContingent(i, (e) => e.copyWith(toLocation: v))),
           EditableTextCell(

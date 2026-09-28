@@ -21,6 +21,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late TextEditingController _nameCtrl;
   late TextEditingController _designationCtrl;
   late TextEditingController _employeeNoCtrl;
+  late TextEditingController _tokenNoCtrl;
   late TextEditingController _divisionCtrl;
   late TextEditingController _headquarterCtrl;
   late TextEditingController _basicPayCtrl;
@@ -30,6 +31,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int _level = 1;
   String _railway = RailwayOptions.list.first;
   String _dateOfAppointment = '';
+  bool _tokenNotApplicable = true; // Token No. is optional (N/A by default)
 
   @override
   void initState() {
@@ -42,6 +44,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _nameCtrl = TextEditingController(text: profile.name);
     _designationCtrl = TextEditingController(text: profile.designation);
     _employeeNoCtrl = TextEditingController(text: profile.employeeNo);
+    _tokenNoCtrl = TextEditingController(text: profile.tokenNo);
+    _tokenNotApplicable = profile.tokenNo.isEmpty;
     _divisionCtrl = TextEditingController(text: profile.division);
     _headquarterCtrl = TextEditingController(text: profile.headquarter);
     _departmentCtrl = TextEditingController(text: profile.department);
@@ -71,6 +75,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _nameCtrl,
       _designationCtrl,
       _employeeNoCtrl,
+      _tokenNoCtrl,
       _divisionCtrl,
       _headquarterCtrl,
       _basicPayCtrl,
@@ -116,6 +121,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       headquarter: _headquarterCtrl.text.trim(),
       division: _divisionCtrl.text.trim(),
       employeeNo: _employeeNoCtrl.text.trim(),
+      tokenNo: _tokenNotApplicable ? '' : _tokenNoCtrl.text.trim(),
       railway: railwayValue,
       department: departmentValue,
       photoPath: existingPhoto,
@@ -163,22 +169,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 label: 'Name *',
                 controller: _nameCtrl,
                 enabled: _isEditing,
-                maxLength: 23,
+                maxLength: 22,
                 validator: (v) => v!.trim().isEmpty ? 'Required' : null),
             _buildField(
                 label: 'Designation *',
                 controller: _designationCtrl,
                 enabled: _isEditing,
-                maxLength: 15,
+                maxLength: 13,
                 validator: (v) => v!.trim().isEmpty ? 'Required' : null),
 
             // Level picker (1-9)
             _buildLevelPicker(),
 
+            // Token / Ticket No. — optional. Sits just before Employee No.
+            _buildTokenField(),
+
             _buildField(
                 label: 'Employee No. *',
                 controller: _employeeNoCtrl,
                 enabled: _isEditing,
+                maxLength: 8,
                 validator: (v) => v!.trim().isEmpty ? 'Required' : null),
 
             // Railway dropdown + Other
@@ -194,7 +204,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 label: 'Headquarter *',
                 controller: _headquarterCtrl,
                 enabled: _isEditing,
-                maxLength: 13,
+                maxLength: 12,
                 validator: (v) => v!.trim().isEmpty ? 'Required' : null),
 
             _buildField(
@@ -320,6 +330,58 @@ class _ProfileScreenState extends State<ProfileScreen> {
             },
           ),
       ],
+    );
+  }
+
+  Widget _buildTokenField() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: TextFormField(
+              controller: _tokenNoCtrl,
+              enabled: _isEditing && !_tokenNotApplicable,
+              maxLength: 6,
+              inputFormatters: [LengthLimitingTextInputFormatter(6)],
+              decoration: InputDecoration(
+                labelText: 'Token / Ticket No.',
+                border: const OutlineInputBorder(),
+                counterText: '',
+                helperText: _tokenNotApplicable
+                    ? 'Not applicable \u2014 nothing will be printed'
+                    : null,
+              ),
+              validator: (v) {
+                if (_tokenNotApplicable) return null;
+                if (v == null || v.trim().isEmpty) {
+                  return 'Enter Token No. or tick N/A';
+                }
+                return null;
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Column(
+              children: [
+                Checkbox(
+                  value: _tokenNotApplicable,
+                  onChanged: _isEditing
+                      ? (v) => setState(() {
+                            _tokenNotApplicable = v ?? false;
+                            if (_tokenNotApplicable) _tokenNoCtrl.clear();
+                          })
+                      : null,
+                ),
+                const Text('N/A', style: TextStyle(fontSize: 12)),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

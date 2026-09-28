@@ -60,29 +60,13 @@ class _FormPreviewScreenState extends State<FormPreviewScreen> {
       ),
       body: Column(
         children: [
-          Container(
-            width: double.infinity,
-            color: const Color(0xFFFFF8E1),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: const [
-                Icon(Icons.pinch_outlined, size: 16, color: Color(0xFF8D6E00)),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Pinch to zoom in and check every entry carefully before finalizing.',
-                    style: TextStyle(fontSize: 12.5, color: Color(0xFF8D6E00)),
-                  ),
-                ),
-              ],
-            ),
-          ),
           Expanded(
             child: PdfPreview(
               build: (_) => file.readAsBytes(),
               allowPrinting: false,
               allowSharing: false,
               canChangeOrientation: false,
+              canChangePageFormat: false,
               canDebug: false,
               pdfFileName: 'ta_form_preview.pdf',
             ),

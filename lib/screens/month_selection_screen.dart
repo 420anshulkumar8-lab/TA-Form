@@ -39,7 +39,7 @@ class _MonthSelectionScreenState extends State<MonthSelectionScreen> {
       final dt = DateTime(now.year, now.month - i, 1);
       final monthName = DateFormat('MMMM').format(dt).toLowerCase();
       final year = dt.year.toString();
-      final key = TaSession.buildKey(monthName, year, profile.employeeNo);
+      final key = TaSession.buildKey(monthName, year, TaSession.ownerId);
       final session = HiveService.getSession(key);
       _months.add(_MonthOption(
         label: DateFormat('MMMM yyyy').format(dt),
@@ -56,7 +56,7 @@ class _MonthSelectionScreenState extends State<MonthSelectionScreen> {
         TaSession(
           month: opt.monthKey,
           year: opt.year,
-          employeeId: profile.employeeNo,
+          employeeId: TaSession.ownerId,
         );
 
     Navigator.push(
