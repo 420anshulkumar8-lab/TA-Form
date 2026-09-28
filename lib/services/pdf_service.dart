@@ -71,6 +71,14 @@ class PdfService {
   }) async {
     final pdf = pw.Document();
 
+    // A finalized TA prints from the profile snapshot frozen at finalize
+    // time, so later profile edits never change it. Drafts (and TAs
+    // finalized before snapshots existed) use the live profile.
+    if (session.status == SessionStatus.submitted &&
+        session.profileSnapshot != null) {
+      profile = EmployeeProfile.fromJson(session.profileSnapshot!);
+    }
+
     final bg1 = await _loadAsset('assets/images/ga31_page1.png');
     final bg2 = await _loadAsset('assets/images/ga31_page2.png');
 
@@ -328,39 +336,57 @@ class PdfService {
     // All header fields: fixed 11pt, bold, centered within their slot width.
     const fs = FormLayout.profileFieldFontSize;
     return [
+      // Employee No. — top-right, 10pt, left-aligned, "Emp. No. " prefix.
+      if (profile.employeeNo.trim().isNotEmpty)
+        _overlayTextBox('Emp. No. ${profile.employeeNo.trim()}',
+            FormLayout.empNoX, FormLayout.empNoY, FormLayout.idFieldFontSize,
+            width: 140, bold: false, maxLines: 1),
+      // Token / Ticket No. — only printed when the user has one (N/A or
+      // empty prints nothing at all, not even the label).
+      if (profile.tokenNo.trim().isNotEmpty)
+        _overlayTextBox('T. No. ${profile.tokenNo.trim()}',
+            FormLayout.tokenNoX, FormLayout.tokenNoY, FormLayout.idFieldFontSize,
+            width: 140, bold: false, maxLines: 1),
       _overlayTextBox(profile.department, FormLayout.branchX,
           FormLayout.branchY, fs,
           width: FormLayout.branchWidth,
           bold: true,
+          maxLines: 1,
           textAlign: _alignFromString(FormLayout.branchAlign)),
       _overlayTextBox(profile.division, FormLayout.divisionX,
           FormLayout.divisionY, fs,
           width: FormLayout.divisionWidth,
           bold: true,
+          maxLines: 1,
           textAlign: _alignFromString(FormLayout.divisionAlign)),
       _overlayTextBox(profile.headquarter, FormLayout.headquartersX,
           FormLayout.headquartersY, fs,
           width: FormLayout.headquartersWidth,
           bold: true,
+          maxLines: 1,
           textAlign: _alignFromString(FormLayout.headquartersAlign)),
       _overlayTextBox(profile.name, FormLayout.employeeNameX,
           FormLayout.shriRowY, fs,
           width: FormLayout.employeeNameWidth,
           bold: true,
+          maxLines: 1,
           textAlign: _alignFromString(FormLayout.employeeNameAlign)),
       _overlayTextBox(monthNameToShort(session.month), FormLayout.monthX,
           FormLayout.shriRowY, fs,
           width: FormLayout.monthWidth,
           bold: true,
+          maxLines: 1,
           textAlign: _alignFromString(FormLayout.monthAlign)),
       _overlayTextBox(yearShort, FormLayout.yearX, FormLayout.yearY, fs,
           width: FormLayout.yearWidth,
           bold: true,
+          maxLines: 1,
           textAlign: _alignFromString(FormLayout.yearAlign)),
       _overlayTextBox(profile.designation, FormLayout.designationX,
           FormLayout.designationRowY, fs,
           width: FormLayout.designationWidth,
           bold: true,
+          maxLines: 1,
           textAlign: _alignFromString(FormLayout.designationAlign)),
       _overlayTextBox(
         profile.basicPay > 0 ? profile.basicPay.toStringAsFixed(0) : '',
@@ -369,18 +395,21 @@ class PdfService {
         fs,
         width: FormLayout.payWidth,
         bold: true,
+          maxLines: 1,
         textAlign: _alignFromString(FormLayout.payAlign),
       ),
       _overlayTextBox(profile.dateOfAppointment,
           FormLayout.dateOfAppointmentX, FormLayout.dateOfAppointmentY, fs,
           width: FormLayout.dateOfAppointmentWidth,
           bold: true,
+          maxLines: 1,
           textAlign: _alignFromString(FormLayout.dateOfAppointmentAlign)),
       // "Rule by which governed" — fixed text (not from profile).
       _overlayTextBox(FormLayout.ruleText, FormLayout.ruleX,
           FormLayout.ruleY, fs,
           width: FormLayout.ruleWidth,
           bold: true,
+          maxLines: 1,
           textAlign: _alignFromString(FormLayout.ruleAlign)),
     ];
   }
@@ -685,7 +714,7 @@ class PdfService {
     double cumulativeY(int localIndex) {
       double y = startY;
       for (int k = 0; k < localIndex; k++) {
-        y += _testRowHeightForRow(k + rowOffset);
+        y += _testRowHeightForRow(k + rowOffset, flatLegs[k].leg);
         y += extraHeightAfterRow[k + rowOffset] ?? 0.0;
       }
       return y;
@@ -708,7 +737,7 @@ class PdfService {
       final blockTopY = cumulativeY(i);
       double blockHeight = 0;
       for (int k = i; k < j; k++) {
-        blockHeight += _testRowHeightForRow(k + rowOffset);
+        blockHeight += _testRowHeightForRow(k + rowOffset, flatLegs[k].leg);
       }
       // Use the font size of this block's FIRST row for the merged text.
       fontSize = _testFontSizeForRow(i + rowOffset);
@@ -789,7 +818,7 @@ class PdfService {
     double cumulativeY(int localIndex) {
       double y = startY;
       for (int k = 0; k < localIndex; k++) {
-        y += _testRowHeightForRow(k + rowOffset);
+        y += _testRowHeightForRow(k + rowOffset, flatLegs[k].leg);
         y += extraHeightAfterRow[k + rowOffset] ?? 0.0;
       }
       return y;
@@ -810,7 +839,7 @@ class PdfService {
       final blockTopY = cumulativeY(i);
       double normalBlockHeight = 0;
       for (int k = i; k < j; k++) {
-        normalBlockHeight += _testRowHeightForRow(k + rowOffset);
+        normalBlockHeight += _testRowHeightForRow(k + rowOffset, flatLegs[k].leg);
       }
       // Purpose column is the one exception: fixed at 9.5pt (still bold).
       fontSize = 9.5;
@@ -858,7 +887,8 @@ class PdfService {
           child: pw.SizedBox(
             width: FormLayout.purposeWidth,
             height: blockHeight,
-            child: pw.Center(
+            child: pw.Align(
+              alignment: pw.Alignment.centerLeft,
               child: pw.Text(
                 purpose,
                 textAlign: pw.TextAlign.justify,
@@ -1104,6 +1134,7 @@ class PdfService {
     required double width,
     bool bold = false,
     pw.TextAlign textAlign = pw.TextAlign.left,
+    int? maxLines,
   }) {
     return pw.Positioned(
       left: x,
@@ -1113,6 +1144,8 @@ class PdfService {
         child: pw.Text(
           text,
           textAlign: textAlign,
+          maxLines: maxLines,
+          overflow: maxLines == null ? null : pw.TextOverflow.clip,
           style: pw.TextStyle(
             font: bold ? pw.Font.courierBold() : pw.Font.courier(),
             fontSize: fontSize,

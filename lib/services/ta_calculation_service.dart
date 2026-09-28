@@ -69,6 +69,43 @@ class TaCalculationService {
     return DateTime(y, m, d);
   }
 
+  // ── Day / Night auto-calculation ──────────────────────────────────────────
+
+  /// Minutes since midnight for an "HH:MM" string. A dash ("—") — the
+  /// "No Time" choice — counts as midnight (00:00). Returns null when the
+  /// time hasn't been entered yet.
+  static int? _minutesOf(String t) {
+    if (t.isEmpty) return null;
+    if (t == '—' || t == '-') return 0;
+    final parts = t.split(':');
+    if (parts.length != 2) return null;
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null) return null;
+    return h * 60 + m;
+  }
+
+  /// "Night" if any part of the journey between [dep] and [arr] falls in
+  /// 22:00\u201306:00, otherwise "Day". Returns '' until both times exist.
+  /// If arrival is at/before departure the journey is treated as crossing
+  /// midnight (arrival on the next day).
+  static String dayNightFor(String dep, String arr) {
+    final d = _minutesOf(dep);
+    final a = _minutesOf(arr);
+    if (d == null || a == null) return '';
+    final start = d;
+    final end = a > d ? a : a + 24 * 60; // arrival next day if <= departure
+    const nightStart = 22 * 60; // 22:00
+    const nightEnd = 6 * 60; // 06:00
+    // Night windows on a 3-day line: [-2h..6h], [22h..30h], [46h..54h]
+    for (final base in [-24 * 60, 0, 24 * 60]) {
+      final ws = base + nightStart; // window start (22:00 of that day)
+      final we = base + 24 * 60 + nightEnd; // window end (06:00 next day)
+      if (start < we && end > ws) return 'Night';
+    }
+    return 'Day';
+  }
+
   // ── Date-sequence validation ──────────────────────────────────────────────
 
   /// Flattens every trip's legs, in on-screen top-to-bottom order, into a

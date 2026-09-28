@@ -25,6 +25,49 @@ class HiveService {
     await Hive.openBox(_settingsBox);
     await Hive.openBox<EmployeeProfile>(_profileBox);
     await Hive.openBox<String>(_sessionsBox); // JSON strings
+
+    await _migrateSessionsToStableOwner();
+  }
+
+  /// One-time (idempotent) migration: earlier versions keyed sessions by the
+  /// editable Employee Number, so changing it made every saved session
+  /// unreachable. Re-key any such session under the stable owner id so the
+  /// data reappears and can never be orphaned again.
+  static Future<void> _migrateSessionsToStableOwner() async {
+    final box = Hive.box<String>(_sessionsBox);
+    for (final oldKey in box.keys.toList()) {
+      final raw = box.get(oldKey);
+      if (raw == null) continue;
+      TaSession s;
+      try {
+        s = TaSession.fromJsonString(raw);
+      } catch (_) {
+        continue;
+      }
+      if (s.employeeId == TaSession.ownerId && oldKey == s.key) continue;
+      final migrated = TaSession(
+        month: s.month,
+        year: s.year,
+        employeeId: TaSession.ownerId,
+        status: s.status,
+        formDataTa: s.formDataTa,
+        formDataContingent: s.formDataContingent,
+        lastUpdated: s.lastUpdated,
+        pdfPath: s.pdfPath,
+        profileSnapshot: s.profileSnapshot,
+      );
+      final existing = box.get(migrated.key);
+      // If two old sessions collapse onto one key, keep the newer one.
+      if (existing != null) {
+        final e = TaSession.fromJsonString(existing);
+        if (e.lastUpdated.compareTo(s.lastUpdated) >= 0) {
+          await box.delete(oldKey);
+          continue;
+        }
+      }
+      await box.put(migrated.key, migrated.toJsonString());
+      if (oldKey != migrated.key) await box.delete(oldKey);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -93,10 +136,12 @@ class HiveService {
       ..sort((a, b) => b.lastUpdated.compareTo(a.lastUpdated));
   }
 
-  /// Sessions for the current employee only
-  static List<TaSession> getSessionsForEmployee(String employeeId) {
+  /// Sessions for the (single) profile owner. The argument is ignored on
+  /// purpose: sessions are tied to the stable owner id, never to the
+  /// editable Employee Number.
+  static List<TaSession> getSessionsForEmployee([String? _]) {
     return getAllSessions()
-        .where((s) => s.employeeId == employeeId)
+        .where((s) => s.employeeId == TaSession.ownerId)
         .toList();
   }
 }
