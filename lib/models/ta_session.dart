@@ -8,7 +8,17 @@ import 'dart:convert';
 
 enum SessionStatus { fresh, draft, submitted }
 
+/// Snapshot of the employee profile fields printed on the PDF, frozen at the
+/// moment a TA is finalized so later profile edits never alter a finalized
+/// TA. Draft sessions never carry a snapshot (they always use the live
+/// profile).
+
 class TaSession {
+  /// Stable, never-changing owner id used in session keys. The app has a
+  /// single profile, so sessions must NOT be tied to the editable Employee
+  /// Number — otherwise editing that number orphans every saved session.
+  static const String ownerId = 'owner';
+
   final String month; // "june"
   final String year; // "2026"
   final String employeeId;
@@ -17,6 +27,11 @@ class TaSession {
   Map<String, dynamic>? formDataContingent; // ContingentFormData.toJson()
   String lastUpdated; // ISO-8601
   String? pdfPath;
+
+  /// Frozen profile data (EmployeeProfile.toJson()) captured at finalize
+  /// time. Null for draft/fresh sessions and for TAs finalized before this
+  /// feature existed.
+  Map<String, dynamic>? profileSnapshot;
 
   TaSession({
     required this.month,
@@ -27,6 +42,7 @@ class TaSession {
     this.formDataContingent,
     String? lastUpdated,
     this.pdfPath,
+    this.profileSnapshot,
   }) : lastUpdated = lastUpdated ?? DateTime.now().toIso8601String();
 
   // ── Hive session key ──────────────────────────────────────────────────────
@@ -65,6 +81,7 @@ class TaSession {
         'form_data_contingent': formDataContingent,
         'last_updated': lastUpdated,
         'pdf_path': pdfPath,
+        'profile_snapshot': profileSnapshot,
       });
 
   factory TaSession.fromJsonString(String jsonString) {
@@ -83,6 +100,7 @@ class TaSession {
       formDataContingent: json['form_data_contingent'] as Map<String, dynamic>?,
       lastUpdated: json['last_updated'] ?? DateTime.now().toIso8601String(),
       pdfPath: json['pdf_path'] as String?,
+      profileSnapshot: json['profile_snapshot'] as Map<String, dynamic>?,
     );
   }
 }
