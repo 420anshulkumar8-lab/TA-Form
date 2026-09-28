@@ -31,13 +31,14 @@ class EmployeeProfileAdapter extends TypeAdapter<EmployeeProfile> {
       railway: fields[8] as String,
       department: fields[9] as String,
       photoPath: fields[10] == null ? '' : fields[10] as String,
+      tokenNo: fields[11] == null ? '' : fields[11] as String,
     );
   }
 
   @override
   void write(BinaryWriter writer, EmployeeProfile obj) {
     writer
-      ..writeByte(11)
+      ..writeByte(12)
       ..writeByte(0)
       ..write(obj.name)
       ..writeByte(1)
@@ -59,7 +60,9 @@ class EmployeeProfileAdapter extends TypeAdapter<EmployeeProfile> {
       ..writeByte(9)
       ..write(obj.department)
       ..writeByte(10)
-      ..write(obj.photoPath);
+      ..write(obj.photoPath)
+      ..writeByte(11)
+      ..write(obj.tokenNo);
   }
 
   @override

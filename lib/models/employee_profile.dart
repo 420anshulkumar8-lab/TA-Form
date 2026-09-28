@@ -38,6 +38,11 @@ class EmployeeProfile extends HiveObject {
   @HiveField(10)
   String photoPath; // local file path of the optional profile picture
 
+  /// Optional Token / Ticket number (max 6 chars). Empty string = "N/A"
+  /// (not applicable) — nothing is printed for it on the PDF.
+  @HiveField(11)
+  String tokenNo;
+
   EmployeeProfile({
     this.name = '',
     this.designation = '',
@@ -50,6 +55,7 @@ class EmployeeProfile extends HiveObject {
     this.railway = '',
     this.department = '',
     this.photoPath = '',
+    this.tokenNo = '',
   });
 
   bool get isComplete =>
@@ -74,6 +80,7 @@ class EmployeeProfile extends HiveObject {
         'railway': railway,
         'department': department,
         'photo_path': photoPath,
+        'token_no': tokenNo,
       };
 
   factory EmployeeProfile.fromJson(Map<String, dynamic> json) =>
@@ -91,5 +98,6 @@ class EmployeeProfile extends HiveObject {
         railway: json['railway'] ?? '',
         department: json['department'] ?? '',
         photoPath: json['photo_path'] ?? '',
+        tokenNo: json['token_no'] ?? '',
       );
 }
