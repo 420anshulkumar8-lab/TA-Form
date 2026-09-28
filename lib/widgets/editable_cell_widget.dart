@@ -15,20 +15,36 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../models/trip_model.dart';
 
-/// Blocks typing beyond [maxWords] space-separated words — used for the
-/// Vehicle/Train "Other" mode field (e.g. "By Road") so the printed PDF
-/// never has to wrap more than 3 words across the Train No. column.
-class _MaxWordsInputFormatter extends TextInputFormatter {
+/// Keeps the Vehicle "Other" text within [maxWords] words of at most
+/// [maxWordLength] characters each. When the user tries to exceed either
+/// limit the edit is rejected and [onViolation] is called with a
+/// professional English warning (so the dialog can show it on screen).
+class _WordLimitInputFormatter extends TextInputFormatter {
   final int maxWords;
-  const _MaxWordsInputFormatter(this.maxWords);
+  final int maxWordLength;
+  final ValueChanged<String> onViolation;
+
+  const _WordLimitInputFormatter({
+    required this.maxWords,
+    required this.maxWordLength,
+    required this.onViolation,
+  });
 
   @override
   TextEditingValue formatEditUpdate(
       TextEditingValue oldValue, TextEditingValue newValue) {
-    final words =
-        newValue.text.trim().isEmpty ? <String>[] : newValue.text.trim().split(RegExp(r'\s+'));
-    if (words.length <= maxWords) return newValue;
-    return oldValue;
+    final trimmed = newValue.text.trim();
+    final words = trimmed.isEmpty ? <String>[] : trimmed.split(RegExp(r'\s+'));
+    if (words.length > maxWords) {
+      onViolation('Maximum $maxWords words are allowed.');
+      return oldValue;
+    }
+    if (words.any((w) => w.length > maxWordLength)) {
+      onViolation('Each word may contain at most $maxWordLength characters.');
+      return oldValue;
+    }
+    onViolation('');
+    return newValue;
   }
 }
 
@@ -143,6 +159,10 @@ class EditableTextCell extends StatelessWidget {
   /// TextField, in addition to the maxLength cap above.
   final List<TextInputFormatter>? inputFormatters;
 
+  /// When true, the edit dialog offers a "—" (no value) button that fills
+  /// the cell with a dash in one tap (used for From / To).
+  final bool allowDash;
+
   const EditableTextCell({
     super.key,
     required this.width,
@@ -155,6 +175,7 @@ class EditableTextCell extends StatelessWidget {
     this.hintText,
     this.maxLength,
     this.inputFormatters,
+    this.allowDash = false,
   });
 
   Future<void> _edit(BuildContext context) async {
@@ -177,6 +198,10 @@ class EditableTextCell extends StatelessWidget {
           onSubmitted: (v) => Navigator.pop(ctx, v),
         ),
         actions: [
+          if (allowDash)
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, '—'),
+                child: const Text('No entry  —')),
           TextButton(
               onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
@@ -257,6 +282,12 @@ class EditableDateCell extends StatelessWidget {
       initialDate: initial,
       firstDate: firstDay,
       lastDate: lastDay,
+      // Calendar-only (tap a day). Hides the keyboard-entry toggle, which
+      // confuses non-technical users.
+      initialEntryMode: DatePickerEntryMode.calendarOnly,
+      helpText: 'Select Date',
+      confirmText: 'OK',
+      cancelText: 'Cancel',
     );
     if (picked != null) {
       onChanged(DateFormat('dd/MM/yyyy').format(picked));
@@ -286,6 +317,114 @@ class EditableDateCell extends StatelessWidget {
   }
 }
 
+/// Simple time dialog: type hour and minute (24h) in two large boxes.
+/// Returns "HH:MM", or "—" if the user taps "No Time".
+class _SimpleTimeDialog extends StatefulWidget {
+  final TimeOfDay initial;
+  const _SimpleTimeDialog({required this.initial});
+
+  @override
+  State<_SimpleTimeDialog> createState() => _SimpleTimeDialogState();
+}
+
+class _SimpleTimeDialogState extends State<_SimpleTimeDialog> {
+  late final TextEditingController _h;
+  late final TextEditingController _m;
+  String _error = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _h = TextEditingController(
+        text: widget.initial.hour.toString().padLeft(2, '0'));
+    _m = TextEditingController(
+        text: widget.initial.minute.toString().padLeft(2, '0'));
+  }
+
+  @override
+  void dispose() {
+    _h.dispose();
+    _m.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final h = int.tryParse(_h.text);
+    final m = int.tryParse(_m.text);
+    if (h == null || m == null || h < 0 || h > 23 || m < 0 || m > 59) {
+      setState(() => _error = 'Enter a valid time (00:00 \u2013 23:59).');
+      return;
+    }
+    Navigator.pop(context,
+        '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}');
+  }
+
+  Widget _box(TextEditingController c, String label) {
+    return SizedBox(
+      width: 80,
+      child: TextField(
+        controller: c,
+        autofocus: label == 'Hour',
+        keyboardType: TextInputType.number,
+        textAlign: TextAlign.center,
+        maxLength: 2,
+        style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        onTap: () => c.selection =
+            TextSelection(baseOffset: 0, extentOffset: c.text.length),
+        decoration: InputDecoration(
+          labelText: label,
+          counterText: '',
+          border: const OutlineInputBorder(),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Select Time (24 hour)'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _box(_h, 'Hour'),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8),
+                child: Text(':',
+                    style:
+                        TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+              ),
+              _box(_m, 'Minute'),
+            ],
+          ),
+          if (_error.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(_error,
+                  style: const TextStyle(color: Colors.red, fontSize: 12)),
+            ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.pop(context, '—'),
+            icon: const Icon(Icons.remove),
+            label: const Text('No Time  —'),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        ElevatedButton(onPressed: _submit, child: const Text('OK')),
+      ],
+    );
+  }
+}
+
 /// 24-hour digital time cell.
 class EditableTimeCell extends StatelessWidget {
   final double width;
@@ -302,8 +441,8 @@ class EditableTimeCell extends StatelessWidget {
   });
 
   Future<void> _pick(BuildContext context) async {
-    TimeOfDay initial = TimeOfDay.now();
-    if (value.isNotEmpty) {
+    TimeOfDay initial = const TimeOfDay(hour: 9, minute: 0);
+    if (value.isNotEmpty && value != '—') {
       final parts = value.split(':');
       if (parts.length == 2) {
         final h = int.tryParse(parts[0]);
@@ -312,21 +451,13 @@ class EditableTimeCell extends StatelessWidget {
       }
     }
 
-    final picked = await showTimePicker(
+    // Simple typing-based 24-hour picker (big hour/minute boxes, no dial to
+    // drag), plus a one-tap "No Time" button that stores a dash.
+    final result = await showDialog<String>(
       context: context,
-      initialTime: initial,
-      builder: (ctx, child) {
-        return MediaQuery(
-          data: MediaQuery.of(ctx).copyWith(alwaysUse24HourFormat: true),
-          child: child!,
-        );
-      },
+      builder: (ctx) => _SimpleTimeDialog(initial: initial),
     );
-    if (picked != null) {
-      final h = picked.hour.toString().padLeft(2, '0');
-      final m = picked.minute.toString().padLeft(2, '0');
-      onChanged('$h:$m');
-    }
+    if (result != null) onChanged(result);
   }
 
   @override
@@ -454,34 +585,50 @@ class EditableVehicleCell extends StatelessWidget {
           text: vehicleType == VehicleEntryType.other ? value : '');
       final result = await showDialog<String>(
         context: context,
-        builder: (ctx) => StatefulBuilder(
-          builder: (ctx, setDialogState) {
-            String? errorText;
-            return AlertDialog(
-              title: const Text('Mode (e.g. By Road, By Taxi)'),
-              content: TextField(
-                controller: ctrl,
-                autofocus: true,
-                textCapitalization: TextCapitalization.words,
-                decoration: InputDecoration(
-                  border: const OutlineInputBorder(),
-                  helperText: 'Max 3 words',
-                  errorText: errorText,
+        builder: (ctx) {
+          String warning = '';
+          return StatefulBuilder(
+            builder: (ctx, setDialogState) {
+              return AlertDialog(
+                title: const Text('Mode (e.g. By Road, By Taxi)'),
+                content: TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: InputDecoration(
+                    border: const OutlineInputBorder(),
+                    helperText: 'Up to 3 words, 5 characters each',
+                    errorText: warning.isEmpty ? null : warning,
+                  ),
+                  inputFormatters: [
+                    _WordLimitInputFormatter(
+                      maxWords: 3,
+                      maxWordLength: 5,
+                      onViolation: (msg) {
+                        if (msg == warning) return;
+                        // Defer: formatters run mid-edit, so rebuild after.
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (ctx.mounted) {
+                            setDialogState(() => warning = msg);
+                          }
+                        });
+                      },
+                    ),
+                  ],
                 ),
-                inputFormatters: [_MaxWordsInputFormatter(3)],
-              ),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Cancel')),
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(ctx, ctrl.text),
-                  child: const Text('OK'),
-                ),
-              ],
-            );
-          },
-        ),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Cancel')),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx, ctrl.text),
+                    child: const Text('OK'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
       );
       if (result != null && result.trim().isNotEmpty) {
         onChanged(result.trim(), VehicleEntryType.other);
@@ -503,6 +650,7 @@ class EditableVehicleCell extends StatelessWidget {
           content: TextField(
             controller: ctrl,
             autofocus: true,
+            maxLength: 30,
             textCapitalization: TextCapitalization.words,
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
@@ -574,11 +722,14 @@ class EditableVehicleCell extends StatelessWidget {
 }
 
 /// Day / Night — 2-option selector.
+/// Day/Night is auto-calculated from the Dep/Arr times (see
+/// TaCalculationService.dayNightFor) and is locked — the user cannot edit
+/// it. Kept under the old class name so existing call sites keep working.
 class EditableDayNightCell extends StatelessWidget {
   final double width;
   final String value; // "Day" | "Night" | ""
   final bool enabled;
-  final ValueChanged<String> onChanged;
+  final ValueChanged<String> onChanged; // unused — cell is locked
 
   const EditableDayNightCell({
     super.key,
@@ -588,50 +739,22 @@ class EditableDayNightCell extends StatelessWidget {
     required this.onChanged,
   });
 
-  Future<void> _pick(BuildContext context) async {
-    final result = await showModalBottomSheet<String>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.wb_sunny_outlined),
-              title: const Text('Day'),
-              onTap: () => Navigator.pop(ctx, 'Day'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.nightlight_round),
-              title: const Text('Night'),
-              onTap: () => Navigator.pop(ctx, 'Night'),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-    if (result != null) onChanged(result);
-  }
-
   @override
   Widget build(BuildContext context) {
     final showHint = value.isEmpty;
     return _CellShell(
       width: width,
-      enabled: enabled,
-      onTap: () => _pick(context),
+      enabled: false, // locked: no tap, no picker
+      onTap: () {},
       child: Text(
-        showHint ? 'Day/Night' : value,
+        showHint ? 'Auto' : value,
         style: showHint
             ? TextStyle(
                 color: Theme.of(context).colorScheme.onSurface.withOpacity(0.28),
                 fontStyle: FontStyle.italic,
                 fontSize: 11.5,
               )
-            : const TextStyle(),
+            : const TextStyle(fontWeight: FontWeight.w600),
       ),
     );
   }
