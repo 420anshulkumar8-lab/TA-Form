@@ -37,6 +37,13 @@ class FormLayout {
   static const double page2Height = 792.0;
 
   // ════════════════════════════════════════════════════════════════════════
+  // Employee No. / Token No. — top-right corner of page 1 (10pt, left).
+  static const double empNoX = 420;
+  static const double empNoY = 8;
+  static const double tokenNoX = 420;
+  static const double tokenNoY = 18;
+  static const double idFieldFontSize = 10.0;
+
   // PAGE 1 — Header strip (employee / posting details)
   // ════════════════════════════════════════════════════════════════════════
 
@@ -54,7 +61,7 @@ class FormLayout {
   static const double divisionWidth = 130;
   static const String divisionAlign = 'center';
   static const double headquartersY = 78;
-  static const double headquartersX = 456.5;
+  static const double headquartersX = 457.5; // +1
   static const double headquartersWidth = 90;
   static const String headquartersAlign = 'center';
 
@@ -97,14 +104,14 @@ class FormLayout {
   // ════════════════════════════════════════════════════════════════════════
   // PAGE 1 — TA Table (9 columns; col-5 splits From|To, col-9 splits Rs|Paise)
   // ════════════════════════════════════════════════════════════════════════
-  static const double dateX = 28; // 1. महीना और तारीख / Month & date
+  static const double dateX = 27; // 1. महीना और तारीख / Month & date
   static const double vehicleX = 92; // 2. गाड़ी नं. / No. of Train
   static const double departureX = 125.4; // 3. प्रस्थान का समय / Time left
   static const double arrivalX = 159; // 4. पहुंचने का समय / Time arrived
   static const double fromX = 195; // 5a. से/From
   static const double toX = 258.5; // 5b. तक/To
   static const double kmX = 317.2; // 6. किलोमीटर / Kilometre
-  static const double dayNightX = 356; // 7. दिन/रात / Day-Night
+  static const double dayNightX = 357; // 7. दिन/रात / Day-Night
   static const double purposeX = 390; // 8. यात्रा का उद्देश्य / Object of Journey
   static const double purposeWidth = 80.0; // width of column 8 (for text wrap)
   static const String purposeAlign = 'left';
