@@ -421,29 +421,12 @@ class PdfService {
 
   static double _testFontSizeForRow(int rowIndex) => _fixedFontSize;
 
-  /// How many words are in this leg's Vehicle/Train field, when it's a
-  /// free-text "Other" mode entry (e.g. "By Road Taxi") — used to decide
-  /// how many lines tall the row needs to be so no word overflows into the
-  /// next row. Train numbers / halts / empty values are always 1 "word"
-  /// (normal single-line height).
-  static int _vehicleWordCount(TripRow leg) {
-    if (leg.vehicleEntryType != VehicleEntryType.other) return 1;
-    final text = leg.vehicleNumber.trim();
-    if (text.isEmpty) return 1;
-    final words = text.split(RegExp(r'\s+'));
-    return words.length.clamp(1, 3);
-  }
-
-  /// Row height for a given absolute row index. Base case is the fixed
-  /// single-line height; when `leg` is provided and its Vehicle/Train field
-  /// is a multi-word free-text entry (e.g. "By Road Taxi"), the row is
-  /// stretched to N× the single-line height (one line per word) so every
-  /// word prints fully inside this row instead of overflowing into the
-  /// next row's Train No. column.
-  static double _testRowHeightForRow(int rowIndex, [TripRow? leg]) {
-    if (leg == null) return _fixedRowHeight;
-    return _fixedRowHeight * _vehicleWordCount(leg);
-  }
+  /// Row height for a given absolute row index. Every row is ALWAYS the
+  /// fixed single-line height — long Vehicle / From / To text never makes a
+  /// row taller (see _fitTopText, which fits such text into the row and the
+  /// free row below it instead).
+  static double _testRowHeightForRow(int rowIndex, [TripRow? leg]) =>
+      _fixedRowHeight;
 
   // All text is bold now.
   static bool _testBoldForRow(int rowIndex) => true;
@@ -629,25 +612,22 @@ class PdfService {
             width: FormLayout.vehicleX - FormLayout.dateX - 2,
             bold: rowBold,
             textAlign: pw.TextAlign.center));
-        // Train/Vehicle No.: if it's a short numeric train number it stays
-        // one line; free-text modes (e.g. "By Road", max 3 words) print one
-        // WORD per line, top to bottom, so it never runs sideways into the
-        // next column — each word forced onto its own line rather than
-        // relying on width-based wrapping. Stays TOP-aligned at `y` (not
-        // `fieldY`) since this field is what defines the row's height in
-        // the first place — the other fields center around it, not the
-        // other way round.
-        widgets.add(_overlayMultilineText(
-          leg.vehicleNumber.contains(' ')
-              ? leg.vehicleNumber.split(RegExp(r'\s+')).join('\n')
-              : leg.vehicleNumber,
+        // Vehicle / From / To: top-aligned, fixed 20pt row. Long text uses
+        // the free row below (40pt box) then shrinks — see _fitTopText.
+        final next = localIndex + 1 < flatLegs.length
+            ? flatLegs[localIndex + 1].leg
+            : null;
+        final nextIsHalt = next?.vehicleEntryType == VehicleEntryType.halt;
+        double boxFor(String nextText) =>
+            (next != null && !nextIsHalt && nextText.trim().isEmpty)
+                ? _fixedRowHeight * 2
+                : _fixedRowHeight;
+        widgets.addAll(_fitTopText(
+          leg.vehicleNumber,
           FormLayout.vehicleX,
           y,
-          fontSize,
-          width: FormLayout.departureX - FormLayout.vehicleX - 2,
-          maxLines: 3,
-          bold: rowBold,
-          textAlign: pw.TextAlign.center,
+          FormLayout.departureX - FormLayout.vehicleX - 2,
+          boxFor(next?.vehicleNumber ?? ''),
         ));
         widgets.add(_overlayTextBox(leg.departureTime, FormLayout.departureX,
             fieldY, fontSize,
@@ -659,18 +639,20 @@ class PdfService {
             width: FormLayout.fromX - FormLayout.arrivalX - 2,
             bold: rowBold,
             textAlign: pw.TextAlign.center));
-        // From: single line, matching the app's 9-char From input limit.
-        widgets.add(_overlayTextBox(leg.fromLocation, FormLayout.fromX,
-            fieldY, fontSize,
-            width: FormLayout.toX - FormLayout.fromX - 2,
-            bold: rowBold,
-            textAlign: pw.TextAlign.center));
-        // To: single line, matching the app's 8-char To input limit.
-        widgets.add(_overlayTextBox(leg.toLocation, FormLayout.toX, fieldY,
-            fontSize,
-            width: FormLayout.kmX - FormLayout.toX - 2,
-            bold: rowBold,
-            textAlign: pw.TextAlign.center));
+        widgets.addAll(_fitTopText(
+          leg.fromLocation,
+          FormLayout.fromX,
+          y,
+          FormLayout.toX - FormLayout.fromX - 2,
+          boxFor(next?.fromLocation ?? ''),
+        ));
+        widgets.addAll(_fitTopText(
+          leg.toLocation,
+          FormLayout.toX,
+          y,
+          FormLayout.kmX - FormLayout.toX - 2,
+          boxFor(next?.toLocation ?? ''),
+        ));
         widgets.add(_overlayTextBox(
             leg.distanceKm == 0 ? '' : leg.distanceKm.toStringAsFixed(0),
             FormLayout.kmX, fieldY, fontSize,
@@ -1075,6 +1057,58 @@ class PdfService {
         ),
       ),
     );
+  }
+
+  // ── Top-aligned fit-to-box text (Vehicle / From / To) ─────────────────────
+  // Text starts at the TOP of its row (never vertically centered). Order:
+  //   1. one line at 10pt, if it fits the column width;
+  //   2. else one word per line (e.g. "By" / "Road"), still 10pt, using the
+  //      row's own 20pt plus — when the next row's cell is empty — that
+  //      row's 20pt too (box = 40pt);
+  //   3. else the font shrinks (never below 4pt) until it fits.
+  // Lines are stacked with NO gap (line step = font size). Courier is
+  // monospaced: every character is exactly 0.6 x font size wide.
+  static List<pw.Widget> _fitTopText(
+    String text,
+    double x,
+    double y,
+    double width,
+    double boxHeight, {
+    double maxFont = _fixedFontSize,
+    double minFont = 4.0,
+  }) {
+    final t = text.trim();
+    if (t.isEmpty) return const [];
+    const charW = 0.6;
+    final words = t.split(RegExp(r'\s+'));
+    final longestWord =
+        words.fold<int>(0, (m, w) => w.length > m ? w.length : m);
+
+    List<String> lines = [t];
+    double fs = minFont;
+    for (double f = maxFont; f >= minFont - 0.001; f -= 0.25) {
+      if (t.length * charW * f <= width + 0.001 && f <= boxHeight) {
+        lines = [t];
+        fs = f;
+        break;
+      }
+      if (words.length > 1 &&
+          words.length * f <= boxHeight + 0.001 &&
+          longestWord * charW * f <= width + 0.001) {
+        lines = words;
+        fs = f;
+        break;
+      }
+    }
+
+    return [
+      for (int i = 0; i < lines.length; i++)
+        _overlayTextBox(lines[i], x, y + i * fs, fs,
+            width: width,
+            bold: true,
+            maxLines: 1,
+            textAlign: pw.TextAlign.center),
+    ];
   }
 
   // ── Multi-line, word-wrapped text overlay for narrow table columns (e.g.
