@@ -123212,8 +123212,8 @@ q=c.d
 l=q.length===0
 q=l?"Halt  (tap to set location)":"Halt at "+q
 n.push(A.hn(j,A.cM(B.aD,A.dk(A.b([r,B.aXC,A.bI(q,j,j,j,A.dm(j,j,l?B.hm:B.dC,j,j,j,j,j,j,j,j,13,B.dX,j,B.bD,j,j,!0,j,j,j,j,j,j,j,j),j,j,j)],m),B.a9,B.ev,B.ad,0),B.R,j,new A.cd(o,j,new A.dz(B.O,new A.aP(i,1,B.V,-1),B.O,B.O),j,j,j,B.at),j,58,j,j,j,j,640),B.au,!1,j,j,j,j,j,j,j,j,j,j,j,j,j,j,j,j,j,j,j,s,j,j,j,j,j,j,!1,B.c_))}else{i=k.w
-r=A.z0(!0,i,"From",j,c.w,j,"From",9,new A.aOw(k,a,b),c.r,110)
-q=A.z0(!0,i,"To",j,c.y,j,"To",8,new A.aOx(k,a,b),c.x,110)
+r=A.z0(!0,i,"From",j,c.w,j,"From",18,new A.aOw(k,a,b),c.r,110)
+q=A.z0(!0,i,"To",j,c.y,j,"To",16,new A.aOx(k,a,b),c.x,110)
 o=c.z
 o=o===0?"":B.n.ag(o,0)
 B.m.S(n,A.b([new A.Us(110,c.d,s,i,new A.aOy(k,a,b),j),new A.FU(80,c.e,i,new A.aOz(k,a,b),j),new A.FU(80,c.f,i,new A.aOA(k,a,b),j),r,q,A.z0(!1,k.w,"Km",A.b([$.Rq(),new A.ok(4,j)],t.VS),!1,B.hO,"Kilometre",4,new A.aOB(k,a,b),o,70),new A.Up(80,c.Q,j)],m))}return A.cM(j,A.dk(n,B.a9,B.a0,B.ad,0),B.R,j,new A.cd(j,j,new A.dz(B.O,B.O,new A.aP(p,1,B.V,-1),B.O),j,j,j,B.at),j,j,j,j,j,j,j)},
