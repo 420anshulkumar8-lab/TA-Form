@@ -247,9 +247,9 @@ class PdfService {
               pw.Positioned.fill(
                 child: pw.Image(pw.MemoryImage(bg2), fit: pw.BoxFit.fill),
               ),
-            ..._legRows(page2Blocks),
-            ..._purposeOverlay(page2Blocks),
-            ..._amountOverlay(page2Blocks),
+            ..._legRows(page2Blocks, dx: -FormLayout.page2XShift),
+            ..._purposeOverlay(page2Blocks, dx: -FormLayout.page2XShift),
+            ..._amountOverlay(page2Blocks, dx: -FormLayout.page2XShift),
             if (!contingentOnPage1 && contingentData != null)
               ..._contingentOverlay(contingentData, contingentStartYFinal,
                   contingentRowHeight, contingentFontSize),
@@ -726,7 +726,8 @@ class PdfService {
   }
 
   // ── Leg rows (everything except Purpose and Amount) ──────────────────────
-  static List<pw.Widget> _legRows(List<_PlacedBlock> blocks) {
+  static List<pw.Widget> _legRows(List<_PlacedBlock> blocks,
+      {double dx = 0}) {
     final widgets = <pw.Widget>[];
 
     for (final pb in blocks) {
@@ -739,7 +740,7 @@ class PdfService {
           // ── Halt row: Date normal; "Halt at X" centered across the merged
           // columns with a solid line on either side (line — text — line).
           // Long text wraps; every wrapped line gets its own side lines.
-          widgets.add(_overlayTextBox(leg.date, FormLayout.dateX, y, _fontSize,
+          widgets.add(_overlayTextBox(leg.date, FormLayout.dateX + dx, y, _fontSize,
               width: FormLayout.vehicleX - FormLayout.dateX - 2,
               bold: true,
               textAlign: pw.TextAlign.center));
@@ -772,18 +773,18 @@ class PdfService {
                 .toDouble();
 
             widgets.add(pw.Positioned(
-              left: FormLayout.vehicleX,
+              left: FormLayout.vehicleX + dx,
               top: lineY,
               child: solidLine(sideWidth),
             ));
             widgets.add(pw.Positioned(
-              left: FormLayout.vehicleX + sideWidth + textWidth + (gap * 2),
+              left: FormLayout.vehicleX + dx + sideWidth + textWidth + (gap * 2),
               top: lineY,
               child: solidLine(sideWidth),
             ));
             widgets.add(_overlayTextBox(
               haltLine,
-              FormLayout.vehicleX,
+              FormLayout.vehicleX + dx,
               lineTop,
               _fontSize,
               width: totalWidth,
@@ -795,48 +796,48 @@ class PdfService {
           // ── Normal journey row. Single-line fields sit on the leg's first
           // line (y). Vehicle / From / To also start at y and continue
           // downward, lines packed tightly.
-          widgets.add(_overlayTextBox(leg.date, FormLayout.dateX, y, _fontSize,
+          widgets.add(_overlayTextBox(leg.date, FormLayout.dateX + dx, y, _fontSize,
               width: FormLayout.vehicleX - FormLayout.dateX - 2,
               bold: true,
               textAlign: pw.TextAlign.center));
           widgets.addAll(_stackedLines(
             box.vehicleLines,
-            x: FormLayout.vehicleX,
+            x: FormLayout.vehicleX + dx,
             top: y,
             width: FormLayout.departureX - FormLayout.vehicleX - 2,
           ));
           widgets.add(_overlayTextBox(
-              leg.departureTime, FormLayout.departureX, y, _fontSize,
+              leg.departureTime, FormLayout.departureX + dx, y, _fontSize,
               width: FormLayout.arrivalX - FormLayout.departureX - 2,
               bold: true,
               textAlign: pw.TextAlign.center));
           widgets.add(_overlayTextBox(
-              leg.arrivalTime, FormLayout.arrivalX, y, _fontSize,
+              leg.arrivalTime, FormLayout.arrivalX + dx, y, _fontSize,
               width: FormLayout.fromX - FormLayout.arrivalX - 2,
               bold: true,
               textAlign: pw.TextAlign.center));
           widgets.addAll(_stackedLines(
             box.fromLines,
-            x: FormLayout.fromX,
+            x: FormLayout.fromX + dx,
             top: y,
             width: FormLayout.toX - FormLayout.fromX - 2,
           ));
           widgets.addAll(_stackedLines(
             box.toLines,
-            x: FormLayout.toX,
+            x: FormLayout.toX + dx,
             top: y,
             width: FormLayout.kmX - FormLayout.toX - 2,
           ));
           widgets.add(_overlayTextBox(
               leg.distanceKm == 0 ? '' : leg.distanceKm.toStringAsFixed(0),
-              FormLayout.kmX,
+              FormLayout.kmX + dx,
               y,
               _fontSize,
               width: FormLayout.dayNightX - FormLayout.kmX - 2,
               bold: true,
               textAlign: pw.TextAlign.center));
           widgets.add(_overlayTextBox(
-              leg.dayNight, FormLayout.dayNightX, y, _fontSize,
+              leg.dayNight, FormLayout.dayNightX + dx, y, _fontSize,
               width: FormLayout.purposeX - FormLayout.dayNightX - 2,
               bold: true,
               textAlign: pw.TextAlign.center));
@@ -850,7 +851,8 @@ class PdfService {
   // ── Amount column — one merged entry per DATE (contiguous rows sharing a
   //    date, even across two trips), centered between the top of the first
   //    such row and the bottom of the last, with a bracket if 2+ rows. ─────
-  static List<pw.Widget> _amountOverlay(List<_PlacedBlock> blocks) {
+  static List<pw.Widget> _amountOverlay(List<_PlacedBlock> blocks,
+      {double dx = 0}) {
     final widgets = <pw.Widget>[];
 
     final placed = <_PlacedLeg>[];
@@ -882,18 +884,18 @@ class PdfService {
           widgets.add(_drawnBracket(
             // Just RIGHT of the printed line (Amount side): ticks point left,
             // so the vertical line sits one tick-length further right.
-            spineX: _amountLineX + _bracketLineGap + _bracketTick,
+            spineX: _amountLineX + dx + _bracketLineGap + _bracketTick,
             top: top,
             height: bottom - top,
           ));
         }
         widgets.add(_overlayTextBox(
-            amt.rupees, FormLayout.amountRsX + _amountTextShift, textTop, _fontSize,
+            amt.rupees, FormLayout.amountRsX + dx + _amountTextShift, textTop, _fontSize,
             width: FormLayout.amountPaiseX - FormLayout.amountRsX - 2,
             bold: true,
             textAlign: pw.TextAlign.center));
         widgets.add(_overlayTextBox(
-            amt.paise, FormLayout.amountPaiseX + _amountTextShift, textTop, _fontSize,
+            amt.paise, FormLayout.amountPaiseX + dx + _amountTextShift, textTop, _fontSize,
             width: 30, bold: true, textAlign: pw.TextAlign.center));
       }
       i = j;
@@ -905,7 +907,8 @@ class PdfService {
   // ── Purpose column — one merged entry per trip; top-aligned when taller than
   //    the trip's rows, otherwise centered against them. Bracket when the trip
   //    has 2+ legs. ────────────────────────────────────────────────────────
-  static List<pw.Widget> _purposeOverlay(List<_PlacedBlock> blocks) {
+  static List<pw.Widget> _purposeOverlay(List<_PlacedBlock> blocks,
+      {double dx = 0}) {
     final widgets = <pw.Widget>[];
 
     for (final pb in blocks) {
@@ -915,7 +918,7 @@ class PdfService {
       if (b.legs.length > 1) {
         widgets.add(_drawnBracket(
           // Just LEFT of the printed line (Day/Night side).
-          spineX: _purposeLineX - _bracketLineGap,
+          spineX: _purposeLineX + dx - _bracketLineGap,
           top: pb.top,
           height: b.mergedHeight,
         ));
@@ -927,6 +930,7 @@ class PdfService {
           b.purposeLines[k],
           startTop + k * _purposeLinePitch,
           justify: k < b.purposeLines.length - 1,
+          dx: dx,
         ));
       }
     }
@@ -937,7 +941,7 @@ class PdfService {
   /// One Purpose line. Every line except the last is justified (words spread
   /// to both edges), like a normal paragraph.
   static pw.Widget _purposeLine(String line, double top,
-      {required bool justify}) {
+      {required bool justify, double dx = 0}) {
     final style = pw.TextStyle(
       font: pw.Font.courierBold(),
       fontSize: _purposeFontSize,
@@ -945,7 +949,7 @@ class PdfService {
     final safeLine = _pdfSafe(line);
     final words = safeLine.split(' ');
     return pw.Positioned(
-      left: FormLayout.purposeX + _purposeSideInset,
+      left: FormLayout.purposeX + dx + _purposeSideInset,
       top: top,
       child: pw.SizedBox(
         width: FormLayout.purposeWidth - (_purposeSideInset * 2),
