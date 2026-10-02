@@ -106,26 +106,26 @@ class FormLayout {
   // ════════════════════════════════════════════════════════════════════════
   static const double dateX = 27; // 1. महीना और तारीख / Month & date
   static const double vehicleX = 92; // 2. गाड़ी नं. / No. of Train
-  static const double departureX = 125.4; // 3. प्रस्थान का समय / Time left
+  static const double departureX = 126; // 3. प्रस्थान का समय / Time left
   static const double arrivalX = 159; // 4. पहुंचने का समय / Time arrived
   static const double fromX = 195; // 5a. से/From
-  static const double toX = 258.5; // 5b. तक/To
-  static const double kmX = 317.2; // 6. किलोमीटर / Kilometre
+  static const double toX = 259; // 5b. तक/To
+  static const double kmX = 318; // 6. किलोमीटर / Kilometre
   static const double dayNightX = 357; // 7. दिन/रात / Day-Night
   static const double purposeX = 390; // 8. यात्रा का उद्देश्य / Object of Journey
   static const double purposeWidth = 80.0; // width of column 8 (for text wrap)
   static const String purposeAlign = 'left';
-  static const double amountRsX = 471; // 9a. रुपये/Rs.
-  static const double amountPaiseX = 505; // 9b. पैसे/Paise
+  static const double amountRsX = 472; // 9a. रुपये/Rs.
+  static const double amountPaiseX = 508; // 9b. पैसे/Paise
 
   // Table body Y-bounds on page 1
-  static const double firstRowY = 243.1; // top of first data row
+  static const double firstRowY = 234.3; // top of first data row
   static const double tableBottomY1 = 705.0; // table's bottom border
 
   // ════════════════════════════════════════════════════════════════════════
   // PAGE 2 — Continuation table (same column X positions as page 1)
   // ════════════════════════════════════════════════════════════════════════
-  static const double firstRowY2 = 77.0; // top of first data row
+  static const double firstRowY2 = 76.7; // top of first data row
   static const double tableBottomY2 = 372.0; // table's bottom border
 
   // "मैं प्रमाणित करता हूँ कि श्री ____ बिल में दिये गये समय के लिए..."
