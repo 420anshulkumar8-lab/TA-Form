@@ -188,7 +188,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 label: 'Employee No. *',
                 controller: _employeeNoCtrl,
                 enabled: _isEditing,
-                maxLength: 8,
+                maxLength: 11,
                 validator: (v) => v!.trim().isEmpty ? 'Required' : null),
 
             // Railway dropdown + Other
