@@ -484,6 +484,50 @@ class PdfService {
     return lines.isEmpty ? <String>[''] : lines;
   }
 
+  /// Purpose wrapping: as many whole words as fit stay on a line. A word that
+  /// does not fit is split with a trailing "-" ONLY when at least [minPart]
+  /// letters stay on each side of the split; otherwise (1-2 letters would be
+  /// left over) the whole word moves to the next line. A word longer than a
+  /// whole line is always split.
+  static List<String> _wrapPurpose(String text, int maxChars,
+      {int minPart = 3}) {
+    final t = text.trim();
+    if (t.isEmpty || maxChars < 1) return <String>[t];
+    final lines = <String>[];
+    var cur = '';
+    for (var w in t.split(RegExp(r'\s+'))) {
+      while (w.isNotEmpty) {
+        // Whole word fits on the current line.
+        if (cur.isEmpty
+            ? w.length <= maxChars
+            : cur.length + 1 + w.length <= maxChars) {
+          cur = cur.isEmpty ? w : '$cur $w';
+          w = '';
+          break;
+        }
+        // Doesn't fit: how many letters (before the "-") would stay here?
+        final room = cur.isEmpty ? maxChars : maxChars - cur.length - 1;
+        var take = room - 1;
+        if (cur.isEmpty) {
+          // Word is longer than a full line → must be split.
+          if (w.length - take < minPart) take = w.length - minPart;
+          if (take < 1) take = 1;
+        } else if (take < minPart || w.length - take < minPart) {
+          // Too few letters on one side → don't split, use a fresh line.
+          lines.add(cur);
+          cur = '';
+          continue;
+        }
+        final piece = '${w.substring(0, take)}-';
+        lines.add(cur.isEmpty ? piece : '$cur $piece');
+        cur = '';
+        w = w.substring(take);
+      }
+    }
+    if (cur.isNotEmpty) lines.add(cur);
+    return lines.isEmpty ? <String>[''] : lines;
+  }
+
   /// Vehicle/Train lines: a train number is one line; an "Other" entry
   /// (e.g. "By Road Taxi") is word-wrapped to the column width, never
   /// splitting a word.
@@ -571,7 +615,7 @@ class PdfService {
 
     final purpose = flats.first.purpose.trim();
     final purposeLines =
-        purpose.isEmpty ? <String>[] : _wrapText(purpose, _purposeCharsPerLine);
+        purpose.isEmpty ? <String>[] : _wrapPurpose(purpose, _purposeCharsPerLine);
     final purposeHeight = _heightForLines(
         purposeLines.length, _purposeFontSize, _purposeLinePitch);
     final purposeAdvance = _purposeAdvanceFor(purposeLines.length);
