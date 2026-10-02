@@ -86,15 +86,17 @@ class TaCalculationService {
   }
 
   /// "Night" if any part of the journey between [dep] and [arr] falls in
-  /// 22:00\u201306:00, otherwise "Day". Returns '' until both times exist.
-  /// If arrival is at/before departure the journey is treated as crossing
-  /// midnight (arrival on the next day).
+  /// 22:00 to 06:00, otherwise "Day". Returns '' until both times exist.
+  /// If arrival is EARLIER than departure the journey is treated as crossing
+  /// midnight (arrival on the next day). If arrival is the SAME as departure
+  /// the journey ends within moments of starting (same day), so only that
+  /// instant is checked — e.g. 09:00 → 09:00 is "Day", not a 24-hour trip.
   static String dayNightFor(String dep, String arr) {
     final d = _minutesOf(dep);
     final a = _minutesOf(arr);
     if (d == null || a == null) return '';
     final start = d;
-    final end = a > d ? a : a + 24 * 60; // arrival next day if <= departure
+    final end = a >= d ? a : a + 24 * 60; // next day only if arrival is EARLIER
     const nightStart = 22 * 60; // 22:00
     const nightEnd = 6 * 60; // 06:00
     // Night windows on a 3-day line: [-2h..6h], [22h..30h], [46h..54h]
