@@ -119,7 +119,7 @@ class FormLayout {
   static const double amountPaiseX = 508; // 9b. पैसे/Paise
 
   // Table body Y-bounds on page 1
-  static const double firstRowY = 234.3; // top of first data row
+  static const double firstRowY = 239.3; // top of first data row (was 234.3, +5)
   static const double tableBottomY1 = 705.0; // table's bottom border
 
   // ════════════════════════════════════════════════════════════════════════
@@ -128,6 +128,21 @@ class FormLayout {
   // Page 2's scan is shifted LEFT vs page 1: every table X below (date …
   // paise, plus the Purpose/Amount brackets) is printed at (page-1 X − this).
   static const double page2XShift = 20.3;
+  // Page 1 only: nudge From / To columns RIGHT (pt). Widths unchanged.
+  static const double page1FromShift = 1.0;
+  static const double page1ToShift = 1.0;
+  // Page 1 only: nudge the Purpose bracket (right after Day/Night) RIGHT (pt).
+  static const double page1PurposeBracketShift = 1.0;
+  // Extra LEFT shift on page 2 only, on top of page2XShift (pt):
+  static const double page2FromShift = 1.0;
+  static const double page2ToShift = 2.0;
+  static const double page2KmShift = 3.0;
+  static const double page2DayNightShift = 3.0;
+  static const double page2PurposeShift = 3.0; // text + its bracket
+  static const double page2AmountShift = 3.0; // Rs + Paise + its bracket
+  // Extra LEFT shift for BOTH brackets (Purpose + Amount) on page 2 only,
+  // on top of their column shifts above:
+  static const double page2BracketShift = 3.0;
   static const double firstRowY2 = 76.7; // top of first data row
   static const double tableBottomY2 = 372.0; // table's bottom border
 
