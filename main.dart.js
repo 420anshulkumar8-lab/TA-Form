@@ -34994,7 +34994,7 @@ if(r==null||q==null)return p
 return r*60+q},
 bi_(a,b){var s,r,q,p,o=A.b2N(a),n=A.b2N(b)
 if(o==null||n==null)return""
-s=n>o?n:n+1440
+s=n>=o?n:n+1440
 for(r=[-1440,0,1440],q=0;q<3;++q){p=r[q]
 if(o<p+1440+360&&s>p+1320)return"Night"}return"Day"},
 bi1(a,b,c,d){var s,r,q,p,o,n,m,l,k,j,i,h,g,f=null
