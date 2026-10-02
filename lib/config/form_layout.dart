@@ -125,6 +125,9 @@ class FormLayout {
   // ════════════════════════════════════════════════════════════════════════
   // PAGE 2 — Continuation table (same column X positions as page 1)
   // ════════════════════════════════════════════════════════════════════════
+  // Page 2's scan is shifted LEFT vs page 1: every table X below (date …
+  // paise, plus the Purpose/Amount brackets) is printed at (page-1 X − this).
+  static const double page2XShift = 20.3;
   static const double firstRowY2 = 76.7; // top of first data row
   static const double tableBottomY2 = 372.0; // table's bottom border
 
