@@ -128,6 +128,39 @@ class _PlacedLeg {
   });
 }
 
+/// Per-column X shift (pt) applied on top of the page-1 X positions.
+/// Page 1 uses none; page 2 uses [FormLayout] page-2 values.
+class _XShift {
+  final double base, from, to, km, dayNight, purpose, amount, bracket, purposeBracket;
+  const _XShift({
+    this.base = 0,
+    this.from = 0,
+    this.to = 0,
+    this.km = 0,
+    this.dayNight = 0,
+    this.purpose = 0,
+    this.amount = 0,
+    this.bracket = 0,
+    this.purposeBracket = 0,
+  });
+  static const none = _XShift();
+  static const page1 = _XShift(
+    from: FormLayout.page1FromShift,
+    to: FormLayout.page1ToShift,
+    purposeBracket: FormLayout.page1PurposeBracketShift,
+  );
+  static const page2 = _XShift(
+    base: -FormLayout.page2XShift,
+    from: -FormLayout.page2FromShift,
+    to: -FormLayout.page2ToShift,
+    km: -FormLayout.page2KmShift,
+    dayNight: -FormLayout.page2DayNightShift,
+    purpose: -FormLayout.page2PurposeShift,
+    amount: -FormLayout.page2AmountShift,
+    bracket: -FormLayout.page2BracketShift,
+  );
+}
+
 class PdfService {
   // ── Main entry point ──────────────────────────────────────────────────────
   static Future<String> generatePdf({
@@ -222,7 +255,7 @@ class PdfService {
                 child: pw.Image(pw.MemoryImage(bg1), fit: pw.BoxFit.fill),
               ),
             ..._headerOverlay(profile, session),
-            ..._legRows(page1Blocks),
+            ..._legRows(page1Blocks, sh: _XShift.page1),
             ..._purposeOverlay(page1Blocks),
             ..._amountOverlay(page1Blocks),
             if (contingentOnPage1 && contingentData != null)
@@ -247,9 +280,9 @@ class PdfService {
               pw.Positioned.fill(
                 child: pw.Image(pw.MemoryImage(bg2), fit: pw.BoxFit.fill),
               ),
-            ..._legRows(page2Blocks, dx: -FormLayout.page2XShift),
-            ..._purposeOverlay(page2Blocks, dx: -FormLayout.page2XShift),
-            ..._amountOverlay(page2Blocks, dx: -FormLayout.page2XShift),
+            ..._legRows(page2Blocks, sh: _XShift.page2),
+            ..._purposeOverlay(page2Blocks, sh: _XShift.page2),
+            ..._amountOverlay(page2Blocks, sh: _XShift.page2),
             if (!contingentOnPage1 && contingentData != null)
               ..._contingentOverlay(contingentData, contingentStartYFinal,
                   contingentRowHeight, contingentFontSize),
@@ -727,7 +760,8 @@ class PdfService {
 
   // ── Leg rows (everything except Purpose and Amount) ──────────────────────
   static List<pw.Widget> _legRows(List<_PlacedBlock> blocks,
-      {double dx = 0}) {
+      {_XShift sh = _XShift.none}) {
+    final dx = sh.base;
     final widgets = <pw.Widget>[];
 
     for (final pb in blocks) {
@@ -818,26 +852,26 @@ class PdfService {
               textAlign: pw.TextAlign.center));
           widgets.addAll(_stackedLines(
             box.fromLines,
-            x: FormLayout.fromX + dx,
+            x: FormLayout.fromX + dx + sh.from,
             top: y,
             width: FormLayout.toX - FormLayout.fromX - 2,
           ));
           widgets.addAll(_stackedLines(
             box.toLines,
-            x: FormLayout.toX + dx,
+            x: FormLayout.toX + dx + sh.to,
             top: y,
             width: FormLayout.kmX - FormLayout.toX - 2,
           ));
           widgets.add(_overlayTextBox(
               leg.distanceKm == 0 ? '' : leg.distanceKm.toStringAsFixed(0),
-              FormLayout.kmX + dx,
+              FormLayout.kmX + dx + sh.km,
               y,
               _fontSize,
               width: FormLayout.dayNightX - FormLayout.kmX - 2,
               bold: true,
               textAlign: pw.TextAlign.center));
           widgets.add(_overlayTextBox(
-              leg.dayNight, FormLayout.dayNightX + dx, y, _fontSize,
+              leg.dayNight, FormLayout.dayNightX + dx + sh.dayNight, y, _fontSize,
               width: FormLayout.purposeX - FormLayout.dayNightX - 2,
               bold: true,
               textAlign: pw.TextAlign.center));
@@ -852,7 +886,8 @@ class PdfService {
   //    date, even across two trips), centered between the top of the first
   //    such row and the bottom of the last, with a bracket if 2+ rows. ─────
   static List<pw.Widget> _amountOverlay(List<_PlacedBlock> blocks,
-      {double dx = 0}) {
+      {_XShift sh = _XShift.none}) {
+    final dx = sh.base + sh.amount;
     final widgets = <pw.Widget>[];
 
     final placed = <_PlacedLeg>[];
@@ -884,7 +919,7 @@ class PdfService {
           widgets.add(_drawnBracket(
             // Just RIGHT of the printed line (Amount side): ticks point left,
             // so the vertical line sits one tick-length further right.
-            spineX: _amountLineX + dx + _bracketLineGap + _bracketTick,
+            spineX: _amountLineX + dx + sh.bracket + _bracketLineGap + _bracketTick,
             top: top,
             height: bottom - top,
           ));
@@ -908,7 +943,8 @@ class PdfService {
   //    the trip's rows, otherwise centered against them. Bracket when the trip
   //    has 2+ legs. ────────────────────────────────────────────────────────
   static List<pw.Widget> _purposeOverlay(List<_PlacedBlock> blocks,
-      {double dx = 0}) {
+      {_XShift sh = _XShift.none}) {
+    final dx = sh.base + sh.purpose;
     final widgets = <pw.Widget>[];
 
     for (final pb in blocks) {
@@ -918,7 +954,7 @@ class PdfService {
       if (b.legs.length > 1) {
         widgets.add(_drawnBracket(
           // Just LEFT of the printed line (Day/Night side).
-          spineX: _purposeLineX + dx - _bracketLineGap,
+          spineX: _purposeLineX + dx + sh.bracket + sh.purposeBracket - _bracketLineGap,
           top: pb.top,
           height: b.mergedHeight,
         ));
