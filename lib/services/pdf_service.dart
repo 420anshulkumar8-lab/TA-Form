@@ -63,6 +63,71 @@ class _FlatLeg {
   });
 }
 
+/// One leg with its column lines already worked out.
+class _LegBox {
+  final _FlatLeg flat;
+  final List<String> vehicleLines;
+  final List<String> fromLines;
+  final List<String> toLines;
+  final int lines; // tallest of Vehicle / From / To
+  final double height; // visible height of those lines
+  final double advance; // this row's top → next row's top
+  const _LegBox({
+    required this.flat,
+    required this.vehicleLines,
+    required this.fromLines,
+    required this.toLines,
+    required this.lines,
+    required this.height,
+    required this.advance,
+  });
+}
+
+/// One trip (or one page-chunk of a trip): its legs flowing downward, where
+/// Purpose sits, and how far down the next trip starts.
+class _TripBlock {
+  final List<_LegBox> legs;
+  final List<double> legOffsets; // leg top, relative to block top
+  final List<String> purposeLines;
+  final double purposeHeight;
+  final double purposeTop; // Purpose top, relative to block top
+  final double mergedHeight; // visible height of the merged Purpose cell
+  final double height; // block top → next trip's top
+  const _TripBlock({
+    required this.legs,
+    required this.legOffsets,
+    required this.purposeLines,
+    required this.purposeHeight,
+    required this.purposeTop,
+    required this.mergedHeight,
+    required this.height,
+  });
+
+  /// Space the block needs on a page, incl. a 10pt breather after its last
+  /// visible line.
+  double get endHeight =>
+      height > mergedHeight + 10 ? height : mergedHeight + 10;
+}
+
+/// A block plus its absolute top Y on the page.
+class _PlacedBlock {
+  final _TripBlock block;
+  final double top;
+  const _PlacedBlock(this.block, this.top);
+}
+
+/// A leg with its absolute top Y on the page (used for Amount merging).
+class _PlacedLeg {
+  final _FlatLeg flat;
+  final double top;
+  final double height;
+  const _PlacedLeg({
+    required this.flat,
+    required this.top,
+    required this.height,
+  });
+}
+
 class PdfService {
   // ── Main entry point ──────────────────────────────────────────────────────
   static Future<String> generatePdf({
@@ -97,96 +162,26 @@ class PdfService {
         taData?.trips ?? <TripGroup>[],
         taData?.dateAmounts ?? <String, double>{});
 
-    // ── TEST: pre-pass to compute how much extra height (if any) each
-    //    DYNAMIC-mode trip's Purpose needs beyond its normal merged-rows
-    //    height, so that trip's full text is never clipped. This extra
-    //    height is injected as a gap AFTER that trip's last row, pushing
-    //    every subsequent row down. CLIP-mode trips contribute 0 extra —
-    //    their Purpose stays clipped to the normal block height instead.
-    //    _extraHeightAfterRow[k] = extra gap inserted immediately after
-    //    row k finishes (0.0 if none).
-    final extraHeightAfterRow = <int, double>{};
-    {
-      int i = 0;
-      while (i < flatLegs.length) {
-        final tripIndex = flatLegs[i].tripIndex;
-        int j = i;
-        while (j < flatLegs.length && flatLegs[j].tripIndex == tripIndex) {
-          j++;
-        }
-        // Normal (non-extended) height this trip's rows occupy.
-        double normalHeight = 0;
-        for (int k = i; k < j; k++) {
-          normalHeight += _testRowHeightForRow(k, flatLegs[k].leg);
-        }
-        if (_isDynamicModeForTrip(tripIndex)) {
-          final purpose = flatLegs[i].purpose;
-          final tripFontSize = _testFontSizeForRow(i);
-          final extra = _dynamicExtraHeightForPurpose(
-              purpose, normalHeight, tripFontSize);
-          if (extra > 0) {
-            extraHeightAfterRow[j - 1] = extra;
-          }
-        }
-        i = j;
-      }
-    }
-
-    /// Cumulative Y for `rowIndex`, accounting for both each row's own
-    /// (possibly-per-block-varying) height AND any dynamic-mode extra gaps
-    /// injected after earlier rows.
-    double cumulativeYWithGaps(double startY, int rowIndex) {
-      double y = startY;
-      for (int k = 0; k < rowIndex; k++) {
-        y += _testRowHeightForRow(k, flatLegs[k].leg);
-        y += extraHeightAfterRow[k] ?? 0.0;
-      }
-      return y;
-    }
-
-    // ── Row height / font size for the WHOLE TA table. All text is now a
-    //    fixed 10pt bold (Purpose column is the sole exception at 9.5pt —
-    //    see _testFontSizeForRow), with one fixed row height for the whole
-    //    table. ────────────────────────────────────────────────────────────
-    const rowHeight = 24.0; // fallback value passed into helper signatures
-    const fontSize = 10.0; // fallback value passed into helper signatures
-
-    int page1Cap = 0;
-    {
-      double y = FormLayout.firstRowY;
-      while (page1Cap < flatLegs.length) {
-        final h = _testRowHeightForRow(page1Cap, flatLegs[page1Cap].leg);
-        if (y + h > FormLayout.tableBottomY1) break;
-        y += h;
-        y += extraHeightAfterRow[page1Cap] ?? 0.0;
-        page1Cap++;
-      }
-    }
-
-    final page1Legs =
-        flatLegs.length <= page1Cap ? flatLegs : flatLegs.sublist(0, page1Cap);
-    final page2Legs =
-        flatLegs.length <= page1Cap ? <_FlatLeg>[] : flatLegs.sublist(page1Cap);
-
-    final taEndsOnPage2 = page2Legs.isNotEmpty;
+    // ── Group legs into trips, size every trip's block (height depends on
+    //    its tallest content: Vehicle/From/To lines, or the Purpose), then
+    //    place whole blocks on page 1 / page 2. ────────────────────────────
+    final pages = _paginate(flatLegs);
+    final page1Blocks = pages[0];
+    final page2Blocks = pages[1];
+    final taEndsOnPage2 = page2Blocks.isNotEmpty;
 
     // ── Where does the TA table (incl. Grand Total) end? Used as the start
     //    Y for the Contingent block on that same page. ──────────────────────
-    // NOTE (test mode): if the table spills onto page 2, page 2's rows
-    // continue the SAME absolute block sequence as page 1 (row indices
-    // page1Cap..flatLegs.length-1), so we sum their individual heights
-    // directly rather than reusing _testCumulativeY's from-zero indexing.
-    double taEndY;
-    if (taEndsOnPage2) {
-      double h2 = 0;
-      for (int k = page1Cap; k < flatLegs.length; k++) {
-        h2 += _testRowHeightForRow(k, flatLegs[k].leg);
-        h2 += extraHeightAfterRow[k] ?? 0.0;
-      }
-      taEndY = FormLayout.firstRowY2 + h2 + 4;
-    } else {
-      taEndY = cumulativeYWithGaps(FormLayout.firstRowY, page1Legs.length) + 4;
+    double blocksEndY(List<_PlacedBlock> blocks, double startY) {
+      if (blocks.isEmpty) return startY;
+      final last = blocks.last;
+      return last.top + last.block.endHeight;
     }
+
+    final double taEndY = (taEndsOnPage2
+            ? blocksEndY(page2Blocks, FormLayout.firstRowY2)
+            : blocksEndY(page1Blocks, FormLayout.firstRowY)) +
+        4;
 
     // ── Contingent sizing ──────────────────────────────────────────────────
     // TEST MODE: same 7-block calibration as the TA table. Total height =
@@ -227,12 +222,9 @@ class PdfService {
                 child: pw.Image(pw.MemoryImage(bg1), fit: pw.BoxFit.fill),
               ),
             ..._headerOverlay(profile, session),
-            ..._legRows(page1Legs, rowHeight, fontSize, FormLayout.firstRowY,
-                extraHeightAfterRow: extraHeightAfterRow),
-            ..._purposeOverlay(page1Legs, rowHeight, fontSize, FormLayout.firstRowY,
-                extraHeightAfterRow: extraHeightAfterRow),
-            ..._amountOverlay(page1Legs, rowHeight, fontSize, FormLayout.firstRowY,
-                extraHeightAfterRow: extraHeightAfterRow),
+            ..._legRows(page1Blocks),
+            ..._purposeOverlay(page1Blocks),
+            ..._amountOverlay(page1Blocks),
             if (contingentOnPage1 && contingentData != null)
               ..._contingentOverlay(contingentData, contingentStartYFinal,
                   contingentRowHeight, contingentFontSize),
@@ -255,12 +247,9 @@ class PdfService {
               pw.Positioned.fill(
                 child: pw.Image(pw.MemoryImage(bg2), fit: pw.BoxFit.fill),
               ),
-            ..._legRows(page2Legs, rowHeight, fontSize, FormLayout.firstRowY2,
-                rowOffset: page1Cap, extraHeightAfterRow: extraHeightAfterRow),
-            ..._purposeOverlay(page2Legs, rowHeight, fontSize, FormLayout.firstRowY2,
-                rowOffset: page1Cap, extraHeightAfterRow: extraHeightAfterRow),
-            ..._amountOverlay(page2Legs, rowHeight, fontSize, FormLayout.firstRowY2,
-                rowOffset: page1Cap, extraHeightAfterRow: extraHeightAfterRow),
+            ..._legRows(page2Blocks),
+            ..._purposeOverlay(page2Blocks),
+            ..._amountOverlay(page2Blocks),
             if (!contingentOnPage1 && contingentData != null)
               ..._contingentOverlay(contingentData, contingentStartYFinal,
                   contingentRowHeight, contingentFontSize),
@@ -414,483 +403,501 @@ class PdfService {
     ];
   }
 
-  // ── Fixed sizing: every field is 10pt bold, one uniform row height.
-  //    (Purpose column overrides to 9.5pt in _purposeOverlay below.) ────────
-  static const double _fixedFontSize = 10.0;
+  // ═══════════════════════════════════════════════════════════════════════
+  // TA TABLE LAYOUT (rows flow top → bottom, one trip = one block)
+  //
+  //  • Every row's FIRST line holds Date, Time, Km, Day/Night; Vehicle, From
+  //    and To also start there and continue downward (words wrap greedily,
+  //    a word is never split). Tightest column decides the row's lines.
+  //  • Next row starts: 20pt below if the row is 1 line, otherwise straight
+  //    under the row's last line (lines × 9.5).
+  //  • Purpose is compared with the trip's rows (total advance):
+  //      Purpose taller  → starts at the trip top, runs downward;
+  //      rows taller     → Purpose is centered against the rows.
+  //    Rows are NEVER stretched or moved because of Purpose; the next trip
+  //    just starts below whichever is taller.
+  //  • Amount is centered across the rows sharing a date (bracket if 2+).
+  // ═══════════════════════════════════════════════════════════════════════
+  static const double _fontSize = 10.0; // every table column
+  static const double _purposeFontSize = 9.5; // Purpose column only
+  static const double _linePitch = 9.5; // line-to-line distance (10pt text)
+  static const double _purposeLinePitch = 9.0; // line-to-line (9.5pt text)
+  static const int _purposeCharsPerLine = 13;
+  static const double _charWidthFactor = 0.6; // Courier: 0.6 × font size
+  static const int _haltCharsPerLine = 36; // Halt text wraps after this
+
+  // Contingent block still uses one fixed 20pt row.
   static const double _fixedRowHeight = 20.0;
+  static double _testFontSizeForRow(int rowIndex) => _fontSize;
+  static double _testRowHeightForRow(int rowIndex) => _fixedRowHeight;
 
-  static double _testFontSizeForRow(int rowIndex) => _fixedFontSize;
+  /// How many characters of `fontSize` Courier text fit in `width` points.
+  static int _maxCharsFor(double width, double fontSize) =>
+      (width / (fontSize * _charWidthFactor)).floor();
 
-  /// Row height for a given absolute row index. Every row is ALWAYS the
-  /// fixed single-line height — long Vehicle / From / To text never makes a
-  /// row taller (see _fitTopText, which fits such text into the row and the
-  /// free row below it instead).
-  static double _testRowHeightForRow(int rowIndex, [TripRow? leg]) =>
-      _fixedRowHeight;
+  /// Height of `lines` stacked lines: first line = font size, every extra
+  /// line adds `pitch`.
+  static double _heightForLines(int lines, double fontSize, double pitch) =>
+      lines <= 0 ? 0.0 : fontSize + (lines - 1) * pitch;
 
-  // All text is bold now.
-  static bool _testBoldForRow(int rowIndex) => true;
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // TEMP TEST — Purpose overflow handling, compared side by side:
-  //   Trip 1 & Trip 2 → DYNAMIC mode: if a Purpose is too long for its
-  //     merged box at the fixed row height, the box grows taller to fit
-  //     the full text, and every row/trip after it is pushed down by
-  //     however much extra height was needed (a visible gap may appear
-  //     between this trip's rows and the next).
-  //   Trip 3 onward → CLIP mode: row heights never change; if a Purpose is
-  //     too long, it's safely clipped instead (font size stays fixed).
-  // Change `_dynamicTripCount` below to compare a different split.
-  // ═══════════════════════════════════════════════════════════════════════
-  static const int _dynamicTripCount = 2;
-
-  static bool _isDynamicModeForTrip(int tripIndex) =>
-      tripIndex < _dynamicTripCount;
-
-  /// How many characters of Purpose text fit on one printed line of the
-  /// merged box. Fixed at 13 chars/line (5-line max, i.e. 65 chars total)
-  /// to match the app's own 65-char Purpose input limit.
-  static int _purposeCharsPerLine(double fontSize) => 13;
-
-  /// How many lines `text` will actually wrap to at this font size (a rough
-  /// word-wrap estimate — good enough for deciding how much extra height a
-  /// long Purpose needs, without needing the PDF engine's real layout pass).
-  static int _purposeWrappedLineCount(String text, double fontSize) {
-    if (text.isEmpty) return 1;
-    final maxChars = _purposeCharsPerLine(fontSize);
-    final words = text.split(RegExp(r'\s+'));
-    int lines = 1;
-    int lineLen = 0;
-    for (final word in words) {
-      final addLen = (lineLen == 0 ? 0 : 1) + word.length;
-      if (lineLen + addLen > maxChars) {
-        lines++;
-        lineLen = word.length;
+  /// Word-wrap `text` into lines of at most `maxChars` characters: as many
+  /// whole words as fit stay on a line, the rest move to the next line.
+  /// With `breakLongWords` a word longer than a line is hard-broken; without
+  /// it such a word stays whole on a line of its own.
+  static List<String> _wrapText(String text, int maxChars,
+      {bool breakLongWords = true}) {
+    final t = text.trim();
+    if (t.isEmpty || maxChars < 1) return <String>[t];
+    final lines = <String>[];
+    var cur = '';
+    for (var w in t.split(RegExp(r'\s+'))) {
+      while (breakLongWords && w.length > maxChars) {
+        if (cur.isNotEmpty) {
+          lines.add(cur);
+          cur = '';
+        }
+        lines.add(w.substring(0, maxChars));
+        w = w.substring(maxChars);
+      }
+      if (w.isEmpty) continue;
+      if (cur.isEmpty) {
+        cur = w;
+      } else if (cur.length + 1 + w.length <= maxChars) {
+        cur = '$cur $w';
       } else {
-        lineLen += addLen;
+        lines.add(cur);
+        cur = w;
       }
     }
-    return lines;
+    if (cur.isNotEmpty) lines.add(cur);
+    return lines.isEmpty ? <String>[''] : lines;
   }
 
-  /// In DYNAMIC mode, the extra height (beyond the normal merged-rows
-  /// height) this trip's Purpose needs so its full text isn't clipped.
-  /// Returns 0 if the text already fits (no extra height needed).
-  static double _dynamicExtraHeightForPurpose(
-    String purpose,
-    double normalBlockHeight,
-    double fontSize,
-  ) {
-    final neededLines = _purposeWrappedLineCount(purpose, fontSize);
-    final lineHeight = fontSize * 1.15;
-    final neededHeight = neededLines * lineHeight;
-    final extra = neededHeight - normalBlockHeight;
-    return extra > 0 ? extra : 0.0;
-  }
-
-  /// Cumulative Y position of `rowIndex` (0-based) given each row before it
-  /// may have had a DIFFERENT height (since each 3-row block uses its own
-  /// row height in this test).
-  static double _testCumulativeY(double startY, int rowIndex) {
-    double y = startY;
-    for (int k = 0; k < rowIndex; k++) {
-      y += _testRowHeightForRow(k);
+  /// Vehicle/Train lines: a train number is one line; an "Other" entry
+  /// (e.g. "By Road Taxi") is word-wrapped to the column width, never
+  /// splitting a word.
+  static List<String> _vehicleLines(TripRow leg) {
+    final text = leg.vehicleNumber.trim();
+    if (leg.vehicleEntryType != VehicleEntryType.other || text.isEmpty) {
+      return <String>[text];
     }
-    return y;
+    final maxChars = _maxCharsFor(
+        FormLayout.departureX - FormLayout.vehicleX - 2, _fontSize);
+    return _wrapText(text, maxChars, breakLongWords: false);
   }
 
-  // ── Leg rows (everything except Purpose column) ───────────────────────────
-  // `rowOffset`: the ABSOLUTE index of flatLegs[0] within the full TA table
-  // (0 for page 1; page1Cap for page 2), so per-row font/height/gap lookups
-  // stay correct even when the table spans two pages.
-  // `extraHeightAfterRow`: dynamic-mode gaps, keyed by ABSOLUTE row index.
-  static List<pw.Widget> _legRows(
-    List<_FlatLeg> flatLegs,
-    double rowHeight,
-    double fontSize,
-    double startY, {
-    int rowOffset = 0,
-    Map<int, double> extraHeightAfterRow = const {},
+  /// Distance from a row's top to the next row's top: a one-line row gets the
+  /// normal 20pt; a multi-line row hands over straight under its last line.
+  static double _advanceFor(int lines) =>
+      lines <= 1 ? _fixedRowHeight : lines * _linePitch;
+
+  /// Same idea for the Purpose text (9pt line pitch).
+  static double _purposeAdvanceFor(int lines) => lines <= 0
+      ? 0.0
+      : (lines == 1 ? _fixedRowHeight : lines * _purposeLinePitch);
+
+  /// Sizes one leg: how many lines each wrapping column needs; the tallest
+  /// column decides the row.
+  static _LegBox _boxForLeg(_FlatLeg flat) {
+    final leg = flat.leg;
+    if (leg.vehicleEntryType == VehicleEntryType.halt) {
+      // Halt text may be any length: wrap it; each line gets its own
+      // "line — text — line" (lines are kept in vehicleLines).
+      final place = leg.vehicleNumber.trim();
+      final haltLines = _wrapText(
+          place.isEmpty ? 'Halt' : 'Halt at $place', _haltCharsPerLine);
+      return _LegBox(
+        flat: flat,
+        vehicleLines: haltLines,
+        fromLines: const <String>[''],
+        toLines: const <String>[''],
+        lines: haltLines.length,
+        height: _heightForLines(haltLines.length, _fontSize, _linePitch),
+        advance: _advanceFor(haltLines.length),
+      );
+    }
+    final veh = _vehicleLines(leg);
+    final from = _wrapText(
+        leg.fromLocation,
+        _maxCharsFor(FormLayout.toX - FormLayout.fromX - 2, _fontSize),
+        breakLongWords: false);
+    final to = _wrapText(
+        leg.toLocation,
+        _maxCharsFor(FormLayout.kmX - FormLayout.toX - 2, _fontSize),
+        breakLongWords: false);
+    var lines = 1;
+    for (final n in <int>[veh.length, from.length, to.length]) {
+      if (n > lines) lines = n;
+    }
+    return _LegBox(
+      flat: flat,
+      vehicleLines: veh,
+      fromLines: from,
+      toLines: to,
+      lines: lines,
+      height: _heightForLines(lines, _fontSize, _linePitch),
+      advance: _advanceFor(lines),
+    );
+  }
+
+  /// Builds the block for one trip (or one page-chunk of a trip).
+  static _TripBlock _buildBlock(List<_FlatLeg> flats) {
+    final legs = flats.map(_boxForLeg).toList();
+
+    // Rows simply flow downward, each one under the previous.
+    final offsets = <double>[];
+    double rowsTotal = 0;
+    for (final l in legs) {
+      offsets.add(rowsTotal);
+      rowsTotal += l.advance;
+    }
+    final rowsExtent = offsets.last + legs.last.height; // visible bottom
+
+    final purpose = flats.first.purpose.trim();
+    final purposeLines =
+        purpose.isEmpty ? <String>[] : _wrapText(purpose, _purposeCharsPerLine);
+    final purposeHeight = _heightForLines(
+        purposeLines.length, _purposeFontSize, _purposeLinePitch);
+    final purposeAdvance = _purposeAdvanceFor(purposeLines.length);
+
+    // Purpose taller than the rows → top-aligned, runs downward.
+    // Rows taller → Purpose centered against the rows.
+    final purposeTaller = purposeAdvance > rowsTotal;
+    final purposeTop = purposeTaller ? 0.0 : (rowsExtent - purposeHeight) / 2;
+
+    return _TripBlock(
+      legs: legs,
+      legOffsets: offsets,
+      purposeLines: purposeLines,
+      purposeHeight: purposeHeight,
+      purposeTop: purposeTop,
+      mergedHeight: purposeHeight > rowsExtent ? purposeHeight : rowsExtent,
+      height: purposeTaller ? purposeAdvance : rowsTotal,
+    );
+  }
+
+  /// Places trip blocks on page 1, then page 2. A trip is never split if it
+  /// can be kept whole (it moves to the next page instead); only a trip too
+  /// tall for a whole page is split at a leg boundary. Returns
+  /// [page1Blocks, page2Blocks].
+  static List<List<_PlacedBlock>> _paginate(List<_FlatLeg> flatLegs) {
+    final starts = <double>[FormLayout.firstRowY, FormLayout.firstRowY2];
+    final caps = <double>[
+      FormLayout.tableBottomY1 - FormLayout.firstRowY,
+      FormLayout.tableBottomY2 - FormLayout.firstRowY2,
+    ];
+    final used = <double>[0.0, 0.0];
+    final pages = <List<_PlacedBlock>>[<_PlacedBlock>[], <_PlacedBlock>[]];
+    int page = 0;
+
+    void place(_TripBlock b) {
+      pages[page].add(_PlacedBlock(b, starts[page] + used[page]));
+      used[page] += b.height;
+    }
+
+    int i = 0;
+    while (i < flatLegs.length) {
+      int j = i;
+      while (j < flatLegs.length &&
+          flatLegs[j].tripIndex == flatLegs[i].tripIndex) {
+        j++;
+      }
+      var remaining = flatLegs.sublist(i, j);
+      i = j;
+
+      while (remaining.isNotEmpty) {
+        final whole = _buildBlock(remaining);
+        // Fits here (page 2 is the last page, so it always "fits").
+        if (page == 1 || used[page] + whole.endHeight <= caps[page]) {
+          place(whole);
+          break;
+        }
+        // Doesn't fit on page 1 → keep the trip whole on page 2 if it can.
+        if (whole.endHeight <= caps[1]) {
+          page = 1;
+          continue;
+        }
+        // Too tall even for page 2 → split at a leg boundary.
+        int k = remaining.length - 1;
+        while (k >= 1) {
+          final part = _buildBlock(remaining.sublist(0, k));
+          if (used[0] + part.endHeight <= caps[0]) break;
+          k--;
+        }
+        if (k < 1) {
+          page = 1;
+          continue;
+        }
+        place(_buildBlock(remaining.sublist(0, k)));
+        remaining = remaining.sublist(k);
+        page = 1;
+      }
+    }
+    return pages;
+  }
+
+  /// Stacked, tightly packed lines of text, one positioned widget per line.
+  /// A line wider than its column (a long unbroken word) is centered on the
+  /// column and overflows equally on both sides instead of wrapping.
+  static List<pw.Widget> _stackedLines(
+    List<String> lines, {
+    required double x,
+    required double top,
+    required double width,
+    double fontSize = _fontSize,
+    double pitch = _linePitch,
+    pw.TextAlign align = pw.TextAlign.center,
   }) {
-    final widgets = <pw.Widget>[];
-    double y = startY;
-
-    for (int localIndex = 0; localIndex < flatLegs.length; localIndex++) {
-      final rowIndex = localIndex + rowOffset;
-      final flat = flatLegs[localIndex];
-      final leg = flat.leg;
-      // TEST: per-block font/row-height instead of the single shared values.
-      fontSize = _testFontSizeForRow(rowIndex);
-      rowHeight = _testRowHeightForRow(rowIndex, leg);
-      final rowBold = _testBoldForRow(rowIndex);
-      // When the Vehicle/Train "Other" field spans multiple words (hence
-      // multiple lines), this row is TALLER than a normal single-line row.
-      // Every other field in this same row (Date, Time, From, To, Km,
-      // Day/Night) should sit vertically CENTERED within that extra height
-      // instead of stuck at the top — matches how Purpose/Amount center
-      // within their own merged multi-row blocks.
-      final singleLineHeight = _fixedRowHeight;
-      final centerOffset = (rowHeight - singleLineHeight) / 2;
-      final fieldY = y + centerOffset;
-
-      if (leg.vehicleEntryType == VehicleEntryType.halt) {
-        // ── Halt row: Date stays normal; "Halt at X" is centered across
-        // the merged columns, with a solid line filling the LEFT and
-        // RIGHT gaps on either side of the text (line — text — line),
-        // all sitting on the same vertical middle — not a line with the
-        // text floating above it.
-        widgets.add(_overlayTextBox(leg.date, FormLayout.dateX, fieldY,
-            fontSize,
-            width: FormLayout.vehicleX - FormLayout.dateX - 2,
-            bold: rowBold,
-            textAlign: pw.TextAlign.center));
-
-        final haltText = leg.vehicleNumber.isEmpty
-            ? 'Halt'
-            : 'Halt at ${leg.vehicleNumber}';
-        final totalWidth =
-            (FormLayout.dayNightX + 28) - FormLayout.vehicleX;
-        // The halt line sits slightly higher than the text's vertical
-        // center so it visually crosses through the middle of the letters
-        // rather than sitting just below them.
-        final lineY = fieldY + (fontSize * 0.75);
-
-        // Approximate the printed text width (Courier ≈ 0.6× font-size per
-        // character) so the two line segments stop exactly at the text's
-        // edges, with a small breathing gap on each side.
-        final textWidth = haltText.length * fontSize * 0.6;
-        const gap = 6.0;
-        final sideWidth = ((totalWidth - textWidth) / 2 - gap).clamp(0.0, totalWidth);
-
-        // A real solid vector line (not a run of '-' text characters —
-        // Courier's hyphen glyph has gaps between repeats, so a long run
-        // of them prints as a dotted/dashed line instead of one solid
-        // stroke). This is a single unbroken line segment of `segWidth`.
-        pw.Widget solidLine(double segWidth) => pw.CustomPaint(
-              size: PdfPoint(segWidth, 1),
-              painter: (canvas, size) {
-                canvas
-                  ..setStrokeColor(PdfColors.black)
-                  ..setLineWidth(0.8)
-                  ..moveTo(0, 0)
-                  ..lineTo(size.x, 0)
-                  ..strokePath();
-              },
-            );
-
-        // Left line segment.
-        widgets.add(pw.Positioned(
-          left: FormLayout.vehicleX,
-          top: lineY,
-          child: solidLine(sideWidth),
-        ));
-        // Right line segment.
-        widgets.add(pw.Positioned(
-          left: FormLayout.vehicleX + sideWidth + textWidth + (gap * 2),
-          top: lineY,
-          child: solidLine(sideWidth),
-        ));
-
-        // Centered "Halt at X" text, sitting on the same line.
-        widgets.add(_overlayTextBox(
-          haltText,
-          FormLayout.vehicleX,
-          fieldY,
-          fontSize,
-          width: totalWidth,
-          textAlign: pw.TextAlign.center,
-          bold: rowBold,
-        ));
-      } else {
-        // ── Normal journey row
-        // Date/Time/From/To/Km/Day-Night are all CENTER-ALIGNED + bold, and
-        // vertically centered within the row (fieldY) — this matters when
-        // the Vehicle/Train "Other" field below makes the row taller than
-        // one line (see fieldY comment above).
-        widgets.add(_overlayTextBox(leg.date, FormLayout.dateX, fieldY,
-            fontSize,
-            width: FormLayout.vehicleX - FormLayout.dateX - 2,
-            bold: rowBold,
-            textAlign: pw.TextAlign.center));
-        // Vehicle / From / To: top-aligned, fixed 20pt row. Long text uses
-        // the free row below (40pt box) then shrinks — see _fitTopText.
-        final next = localIndex + 1 < flatLegs.length
-            ? flatLegs[localIndex + 1].leg
-            : null;
-        final nextIsHalt = next?.vehicleEntryType == VehicleEntryType.halt;
-        double boxFor(String nextText) =>
-            (next != null && !nextIsHalt && nextText.trim().isEmpty)
-                ? _fixedRowHeight * 2
-                : _fixedRowHeight;
-        widgets.addAll(_fitTopText(
-          leg.vehicleNumber,
-          FormLayout.vehicleX,
-          y,
-          FormLayout.departureX - FormLayout.vehicleX - 2,
-          boxFor(next?.vehicleNumber ?? ''),
-        ));
-        widgets.add(_overlayTextBox(leg.departureTime, FormLayout.departureX,
-            fieldY, fontSize,
-            width: FormLayout.arrivalX - FormLayout.departureX - 2,
-            bold: rowBold,
-            textAlign: pw.TextAlign.center));
-        widgets.add(_overlayTextBox(leg.arrivalTime, FormLayout.arrivalX,
-            fieldY, fontSize,
-            width: FormLayout.fromX - FormLayout.arrivalX - 2,
-            bold: rowBold,
-            textAlign: pw.TextAlign.center));
-        widgets.addAll(_fitTopText(
-          leg.fromLocation,
-          FormLayout.fromX,
-          y,
-          FormLayout.toX - FormLayout.fromX - 2,
-          boxFor(next?.fromLocation ?? ''),
-        ));
-        widgets.addAll(_fitTopText(
-          leg.toLocation,
-          FormLayout.toX,
-          y,
-          FormLayout.kmX - FormLayout.toX - 2,
-          boxFor(next?.toLocation ?? ''),
-        ));
-        widgets.add(_overlayTextBox(
-            leg.distanceKm == 0 ? '' : leg.distanceKm.toStringAsFixed(0),
-            FormLayout.kmX, fieldY, fontSize,
-            width: FormLayout.dayNightX - FormLayout.kmX - 2,
-            bold: rowBold,
-            textAlign: pw.TextAlign.center));
-        widgets.add(_overlayTextBox(leg.dayNight, FormLayout.dayNightX,
-            fieldY, fontSize,
-            width: FormLayout.purposeX - FormLayout.dayNightX - 2,
-            bold: rowBold,
-            textAlign: pw.TextAlign.center));
+    final out = <pw.Widget>[];
+    for (int k = 0; k < lines.length; k++) {
+      final line = lines[k];
+      if (line.isEmpty) continue;
+      final needed = line.length * fontSize * _charWidthFactor;
+      var boxX = x;
+      var boxW = width;
+      if (needed > width) {
+        boxX = x - (needed - width) / 2 - 0.5;
+        boxW = needed + 1;
       }
+      out.add(_overlayTextBox(line, boxX, top + k * pitch, fontSize,
+          width: boxW, bold: true, textAlign: align));
+    }
+    return out;
+  }
 
-      y += rowHeight;
-      y += extraHeightAfterRow[rowIndex] ?? 0.0;
+  // ── Leg rows (everything except Purpose and Amount) ──────────────────────
+  static List<pw.Widget> _legRows(List<_PlacedBlock> blocks) {
+    final widgets = <pw.Widget>[];
+
+    for (final pb in blocks) {
+      for (int i = 0; i < pb.block.legs.length; i++) {
+        final box = pb.block.legs[i];
+        final leg = box.flat.leg;
+        final y = pb.top + pb.block.legOffsets[i]; // top of this leg
+
+        if (leg.vehicleEntryType == VehicleEntryType.halt) {
+          // ── Halt row: Date normal; "Halt at X" centered across the merged
+          // columns with a solid line on either side (line — text — line).
+          // Long text wraps; every wrapped line gets its own side lines.
+          widgets.add(_overlayTextBox(leg.date, FormLayout.dateX, y, _fontSize,
+              width: FormLayout.vehicleX - FormLayout.dateX - 2,
+              bold: true,
+              textAlign: pw.TextAlign.center));
+
+          final totalWidth = (FormLayout.dayNightX + 28) - FormLayout.vehicleX;
+          const gap = 6.0;
+
+          // Real vector line (a run of '-' characters prints dashed).
+          pw.Widget solidLine(double segWidth) => pw.CustomPaint(
+                size: PdfPoint(segWidth, 1),
+                painter: (canvas, size) {
+                  canvas
+                    ..setStrokeColor(PdfColors.black)
+                    ..setLineWidth(0.8)
+                    ..moveTo(0, 0)
+                    ..lineTo(size.x, 0)
+                    ..strokePath();
+                },
+              );
+
+          for (int k = 0; k < box.vehicleLines.length; k++) {
+            final haltLine = box.vehicleLines[k];
+            final lineTop = y + k * _linePitch;
+            final lineY = lineTop + (_fontSize * 0.75);
+
+            // Courier ≈ 0.6× font-size per character.
+            final textWidth = haltLine.length * _fontSize * _charWidthFactor;
+            final sideWidth = ((totalWidth - textWidth) / 2 - gap)
+                .clamp(0.0, totalWidth)
+                .toDouble();
+
+            widgets.add(pw.Positioned(
+              left: FormLayout.vehicleX,
+              top: lineY,
+              child: solidLine(sideWidth),
+            ));
+            widgets.add(pw.Positioned(
+              left: FormLayout.vehicleX + sideWidth + textWidth + (gap * 2),
+              top: lineY,
+              child: solidLine(sideWidth),
+            ));
+            widgets.add(_overlayTextBox(
+              haltLine,
+              FormLayout.vehicleX,
+              lineTop,
+              _fontSize,
+              width: totalWidth,
+              textAlign: pw.TextAlign.center,
+              bold: true,
+            ));
+          }
+        } else {
+          // ── Normal journey row. Single-line fields sit on the leg's first
+          // line (y). Vehicle / From / To also start at y and continue
+          // downward, lines packed tightly.
+          widgets.add(_overlayTextBox(leg.date, FormLayout.dateX, y, _fontSize,
+              width: FormLayout.vehicleX - FormLayout.dateX - 2,
+              bold: true,
+              textAlign: pw.TextAlign.center));
+          widgets.addAll(_stackedLines(
+            box.vehicleLines,
+            x: FormLayout.vehicleX,
+            top: y,
+            width: FormLayout.departureX - FormLayout.vehicleX - 2,
+          ));
+          widgets.add(_overlayTextBox(
+              leg.departureTime, FormLayout.departureX, y, _fontSize,
+              width: FormLayout.arrivalX - FormLayout.departureX - 2,
+              bold: true,
+              textAlign: pw.TextAlign.center));
+          widgets.add(_overlayTextBox(
+              leg.arrivalTime, FormLayout.arrivalX, y, _fontSize,
+              width: FormLayout.fromX - FormLayout.arrivalX - 2,
+              bold: true,
+              textAlign: pw.TextAlign.center));
+          widgets.addAll(_stackedLines(
+            box.fromLines,
+            x: FormLayout.fromX,
+            top: y,
+            width: FormLayout.toX - FormLayout.fromX - 2,
+          ));
+          widgets.addAll(_stackedLines(
+            box.toLines,
+            x: FormLayout.toX,
+            top: y,
+            width: FormLayout.kmX - FormLayout.toX - 2,
+          ));
+          widgets.add(_overlayTextBox(
+              leg.distanceKm == 0 ? '' : leg.distanceKm.toStringAsFixed(0),
+              FormLayout.kmX,
+              y,
+              _fontSize,
+              width: FormLayout.dayNightX - FormLayout.kmX - 2,
+              bold: true,
+              textAlign: pw.TextAlign.center));
+          widgets.add(_overlayTextBox(
+              leg.dayNight, FormLayout.dayNightX, y, _fontSize,
+              width: FormLayout.purposeX - FormLayout.dayNightX - 2,
+              bold: true,
+              textAlign: pw.TextAlign.center));
+        }
+      }
     }
 
     return widgets;
   }
 
-  // ── Amount column — one merged entry per DATE (not per trip), vertically
-  //    centered across every row that shares that date, even when those
-  //    rows belong to different trips and are adjacent only because one
-  //    trip's last leg and the next trip's first leg happen to share a
-  //    date (e.g. Trip 1 ends 2-Mar, Trip 2 starts 2-Mar → one merged
-  //    Amount box spanning both rows, centered on the combined block).
-  //    Mirrors _purposeOverlay's centering approach but groups by date
-  //    instead of by trip. Only legs present on THIS page are considered,
-  //    since a merge can't visually span two separate PDF pages. ──────────
-  static List<pw.Widget> _amountOverlay(
-    List<_FlatLeg> flatLegs,
-    double rowHeight,
-    double fontSize,
-    double startY, {
-    int rowOffset = 0,
-    Map<int, double> extraHeightAfterRow = const {},
-  }) {
+  // ── Amount column — one merged entry per DATE (contiguous rows sharing a
+  //    date, even across two trips), centered between the top of the first
+  //    such row and the bottom of the last, with a bracket if 2+ rows. ─────
+  static List<pw.Widget> _amountOverlay(List<_PlacedBlock> blocks) {
     final widgets = <pw.Widget>[];
-    if (flatLegs.isEmpty) return widgets;
 
-    double cumulativeY(int localIndex) {
-      double y = startY;
-      for (int k = 0; k < localIndex; k++) {
-        y += _testRowHeightForRow(k + rowOffset, flatLegs[k].leg);
-        y += extraHeightAfterRow[k + rowOffset] ?? 0.0;
+    final placed = <_PlacedLeg>[];
+    for (final pb in blocks) {
+      for (int i = 0; i < pb.block.legs.length; i++) {
+        placed.add(_PlacedLeg(
+          flat: pb.block.legs[i].flat,
+          top: pb.top + pb.block.legOffsets[i],
+          height: pb.block.legs[i].height,
+        ));
       }
-      return y;
     }
 
     int i = 0;
-    while (i < flatLegs.length) {
-      final date = flatLegs[i].leg.date;
-
-      // Find the contiguous run of legs (within this page) sharing this
-      // date, regardless of which trip they belong to.
+    while (i < placed.length) {
+      final date = placed[i].flat.leg.date;
       int j = i;
-      while (j < flatLegs.length && flatLegs[j].leg.date == date) {
+      while (j < placed.length && placed[j].flat.leg.date == date) {
         j++;
       }
-      final legCountOnThisPage = j - i;
-      // TEST: rows in this run may span different calibration blocks, each
-      // with its own row height, so the block's total height is the sum of
-      // each individual row's height rather than a uniform rowHeight * count.
-      final blockTopY = cumulativeY(i);
-      double blockHeight = 0;
-      for (int k = i; k < j; k++) {
-        blockHeight += _testRowHeightForRow(k + rowOffset, flatLegs[k].leg);
-      }
-      // Use the font size of this block's FIRST row for the merged text.
-      fontSize = _testFontSizeForRow(i + rowOffset);
-      final rowBold = _testBoldForRow(i + rowOffset);
+      final top = placed[i].top;
+      final bottom = placed[j - 1].top + placed[j - 1].height;
 
       if (date.isNotEmpty) {
-        final amt = _splitAmount(flatLegs[i].amount);
+        final amt = _splitAmount(placed[i].flat.amount);
+        final textTop = ((top + bottom) / 2) - (_fontSize / 2);
 
-        // Curly-bracket connector only drawn when this date spans more than
-        // 1 row on this page — a single-row date just gets plain centered
-        // text, matching how Purpose's bracket behaves. Drawn as an actual
-        // vector shape so it always spans the full block height correctly.
-        if (legCountOnThisPage > 1) {
+        if (j - i > 1) {
           widgets.add(_drawnBracket(
-            left: FormLayout.amountRsX - 10,
-            top: blockTopY,
-            height: blockHeight,
+            // Midway between the end of the Purpose column and where the
+            // Amount (Rs) text starts.
+            spineX: _midX(FormLayout.purposeX + FormLayout.purposeWidth,
+                FormLayout.amountRsX),
+            top: top,
+            height: bottom - top,
           ));
         }
-
-        widgets.add(pw.Positioned(
-          left: FormLayout.amountRsX,
-          top: blockTopY,
-          child: pw.SizedBox(
+        widgets.add(_overlayTextBox(
+            amt.rupees, FormLayout.amountRsX, textTop, _fontSize,
             width: FormLayout.amountPaiseX - FormLayout.amountRsX - 2,
-            height: blockHeight,
-            child: pw.Center(
-              child: pw.Text(
-                amt.rupees,
-                textAlign: pw.TextAlign.center,
-                style: pw.TextStyle(
-                    font: rowBold ? pw.Font.courierBold() : pw.Font.courier(),
-                    fontSize: fontSize),
-              ),
-            ),
-          ),
-        ));
-        widgets.add(pw.Positioned(
-          left: FormLayout.amountPaiseX,
-          top: blockTopY,
-          child: pw.SizedBox(
-            width: 30,
-            height: blockHeight,
-            child: pw.Center(
-              child: pw.Text(
-                amt.paise,
-                textAlign: pw.TextAlign.center,
-                style: pw.TextStyle(
-                    font: rowBold ? pw.Font.courierBold() : pw.Font.courier(),
-                    fontSize: fontSize),
-              ),
-            ),
-          ),
-        ));
+            bold: true,
+            textAlign: pw.TextAlign.center));
+        widgets.add(_overlayTextBox(
+            amt.paise, FormLayout.amountPaiseX, textTop, _fontSize,
+            width: 30, bold: true, textAlign: pw.TextAlign.center));
       }
-
       i = j;
     }
 
     return widgets;
   }
 
-  // ── Purpose column — one merged entry per Trip, vertically centered next
-  //    to that trip's legs, with a small curly-bracket spanning multi-leg
-  //    trips. Handles trips that got split across page 1/page 2 by only
-  //    drawing the bracket/text for the legs present on THIS page's list. ──
-  static List<pw.Widget> _purposeOverlay(
-    List<_FlatLeg> flatLegs,
-    double rowHeight,
-    double fontSize,
-    double startY, {
-    int rowOffset = 0,
-    Map<int, double> extraHeightAfterRow = const {},
-  }) {
+  // ── Purpose column — one merged entry per trip; top-aligned when taller than
+  //    the trip's rows, otherwise centered against them. Bracket when the trip
+  //    has 2+ legs. ────────────────────────────────────────────────────────
+  static List<pw.Widget> _purposeOverlay(List<_PlacedBlock> blocks) {
     final widgets = <pw.Widget>[];
-    if (flatLegs.isEmpty) return widgets;
 
-    double cumulativeY(int localIndex) {
-      double y = startY;
-      for (int k = 0; k < localIndex; k++) {
-        y += _testRowHeightForRow(k + rowOffset, flatLegs[k].leg);
-        y += extraHeightAfterRow[k + rowOffset] ?? 0.0;
-      }
-      return y;
-    }
+    for (final pb in blocks) {
+      final b = pb.block;
+      if (b.purposeLines.isEmpty) continue;
 
-    int i = 0;
-    while (i < flatLegs.length) {
-      final tripIndex = flatLegs[i].tripIndex;
-      // Find the contiguous run of legs (within this page) belonging to
-      // the same trip.
-      int j = i;
-      while (j < flatLegs.length && flatLegs[j].tripIndex == tripIndex) {
-        j++;
-      }
-      final legCountOnThisPage = j - i;
-      // TEST: same cumulative-height approach as _amountOverlay, since each
-      // 3-row calibration block has its own row height.
-      final blockTopY = cumulativeY(i);
-      double normalBlockHeight = 0;
-      for (int k = i; k < j; k++) {
-        normalBlockHeight += _testRowHeightForRow(k + rowOffset, flatLegs[k].leg);
-      }
-      // Purpose column is the one exception: fixed at 9.5pt (still bold).
-      fontSize = 9.5;
-      final rowBold = _testBoldForRow(i + rowOffset);
-      final purpose = flatLegs[i].purpose;
-      final isDynamic = _isDynamicModeForTrip(tripIndex);
-
-      // DYNAMIC mode: the box grows to whatever height the full text needs
-      // (the extra was already reserved as a gap by the pre-pass, so this
-      // box visually fills that gap instead of leaving it empty).
-      // CLIP mode: box stays exactly the normal merged-rows height; text
-      // beyond that is safely clipped rather than resized or overflowing.
-      final blockHeight = isDynamic
-          ? normalBlockHeight +
-              _dynamicExtraHeightForPurpose(purpose, normalBlockHeight, fontSize)
-          : normalBlockHeight;
-
-      if (purpose.isNotEmpty) {
-        // Curly-bracket connector only drawn when this trip has more than 1 leg on
-        // this page — a single-leg trip just gets plain centered text. Drawn
-        // as an actual vector shape (not a `}` glyph) so it always spans the
-        // full block height correctly, whether it's 2 rows or 6.
-        if (legCountOnThisPage > 1) {
-          widgets.add(_drawnBracket(
-            left: FormLayout.purposeX - 10,
-            top: blockTopY,
-            height: blockHeight,
-          ));
-        }
-
-        // Font size is ALWAYS fixed at `fontSize` — never shrunk — so every
-        // Purpose entry on the form looks visually consistent.
-        //   DYNAMIC trips: box height already grew to fit the full text
-        //     above, so no clipping should ever be needed here.
-        //   CLIP trips: box stays at the normal height; text beyond that is
-        //     safely clipped (never overflows/crashes the PDF).
-        // The text block itself is vertically (and horizontally, via the
-        // SizedBox width) centered inside the box, but the text's OWN
-        // alignment stays justified — so lines still line up flush on
-        // both the left and right edges, they just sit centered top-to-
-        // bottom instead of starting flush at the top.
-        widgets.add(pw.Positioned(
-          left: FormLayout.purposeX,
-          top: blockTopY,
-          child: pw.SizedBox(
-            width: FormLayout.purposeWidth,
-            height: blockHeight,
-            child: pw.Align(
-              alignment: pw.Alignment.centerLeft,
-              child: pw.Text(
-                purpose,
-                textAlign: pw.TextAlign.justify,
-                style: pw.TextStyle(
-                    font: rowBold ? pw.Font.courierBold() : pw.Font.courier(),
-                    fontSize: fontSize),
-                maxLines: isDynamic
-                    ? null
-                    : (normalBlockHeight / (fontSize * 1.15)).floor().clamp(1, 5),
-                overflow: pw.TextOverflow.clip,
-              ),
-            ),
-          ),
+      if (b.legs.length > 1) {
+        widgets.add(_drawnBracket(
+          // Midway between the end of the Day/Night column and where
+          // Purpose text starts.
+          spineX: _midX(FormLayout.purposeX - 2, FormLayout.purposeX),
+          top: pb.top,
+          height: b.mergedHeight,
         ));
       }
 
-      i = j;
+      final startTop = pb.top + b.purposeTop;
+      for (int k = 0; k < b.purposeLines.length; k++) {
+        widgets.add(_purposeLine(
+          b.purposeLines[k],
+          startTop + k * _purposeLinePitch,
+          justify: k < b.purposeLines.length - 1,
+        ));
+      }
     }
 
     return widgets;
+  }
+
+  /// One Purpose line. Every line except the last is justified (words spread
+  /// to both edges), like a normal paragraph.
+  static pw.Widget _purposeLine(String line, double top,
+      {required bool justify}) {
+    final style = pw.TextStyle(
+      font: pw.Font.courierBold(),
+      fontSize: _purposeFontSize,
+    );
+    final words = line.split(' ');
+    return pw.Positioned(
+      left: FormLayout.purposeX,
+      top: top,
+      child: pw.SizedBox(
+        width: FormLayout.purposeWidth,
+        child: (justify && words.length > 1)
+            ? pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: words.map((w) => pw.Text(w, style: style)).toList(),
+              )
+            : pw.Text(line, style: style),
+      ),
+    );
   }
 
   // ── Contingent bill rows — printed directly under the TA table on the
@@ -979,58 +986,33 @@ class PdfService {
     return _Amount(rs.toString(), paise.toString().padLeft(2, '0'));
   }
 
-  // ── Drawn square-bracket "]" connector ──────────────────────────────────────
-  // A single `}`/`]` glyph doesn't stretch to fill an arbitrary height — its
-  // shape is fixed by the font, so on a 3+ row merge it either looks too
-  // small or visually disconnected from the rows it's meant to span. This
-  // draws an actual vector bracket shape instead, so it always spans
-  // exactly `height` regardless of how many rows are merged.
-  //
-  // Shaped like "]" — a straight vertical spine with short horizontal ticks
-  // at the top and bottom — rather than a curly "(" bracket. The curly
-  // version's wide curve pokes deep into the column to its right; this
-  // square version keeps its whole footprint within `width`, so it never
-  // intrudes into the Purpose/Amount text next to it.
+  // ── Midpoint between two X positions ──────────────────────────────────────
+  static double _midX(double a, double b) => (a + b) / 2;
+
+  // ── Plain "]" bracket ─────────────────────────────────────────────────────
+  // Vertical spine at [spineX], with a short tick at the top and at the
+  // bottom pointing LEFT (so it reads as "]"). Spans [height] from [top].
   static pw.Widget _drawnBracket({
-    required double left,
+    required double spineX,
     required double top,
     required double height,
   }) {
-    const width = 5.0; // total horizontal footprint — kept tight so it
-    // never reaches into the column text sitting to its right
-    const tick = 3.0; // length of the top/bottom horizontal ticks
+    const tick = 2.0; // length of the top/bottom ticks
     return pw.Positioned(
-      left: left,
+      left: spineX - tick,
       top: top,
       child: pw.CustomPaint(
-        size: PdfPoint(width, height),
+        size: PdfPoint(tick, height),
         painter: (canvas, size) {
           final w = size.x;
           final h = size.y;
-          // The spine sits at the RIGHT edge (x = w) — top/bottom ticks and
-          // the middle tip all point LEFT from it (toward x = 0), so the
-          // whole bracket reads as "]" opening to the left, matching the
-          // side it's drawn on (immediately left of Purpose/Amount text).
           canvas
             ..setStrokeColor(PdfColors.black)
             ..setLineWidth(0.8)
-            // Top tick: short horizontal stroke going LEFT from the spine.
-            ..moveTo(w, 0)
-            ..lineTo(w - tick, 0)
-            // Spine: straight vertical line down the right edge.
-            ..moveTo(w, 0)
-            ..lineTo(w, h)
-            // Bottom tick: short horizontal stroke going LEFT from the spine.
-            ..moveTo(w, h)
-            ..lineTo(w - tick, h)
-            ..strokePath();
-          // Small centered tip poking LEFT at the vertical midpoint, like
-          // the middle point of a "}" — keeps the bracket reading as a
-          // single connector rather than a plain "[".
-          canvas
-            ..moveTo(w, h / 2 - 2)
-            ..lineTo(0, h / 2)
-            ..lineTo(w, h / 2 + 2)
+            ..moveTo(0, 0)
+            ..lineTo(w, 0) // top tick
+            ..lineTo(w, h) // spine
+            ..lineTo(0, h) // bottom tick
             ..strokePath();
         },
       ),
@@ -1054,93 +1036,6 @@ class PdfService {
         style: pw.TextStyle(
           font: font ?? (bold ? pw.Font.courierBold() : pw.Font.courier()),
           fontSize: fontSize,
-        ),
-      ),
-    );
-  }
-
-  // ── Top-aligned fit-to-box text (Vehicle / From / To) ─────────────────────
-  // Text starts at the TOP of its row (never vertically centered). Order:
-  //   1. one line at 10pt, if it fits the column width;
-  //   2. else one word per line (e.g. "By" / "Road"), still 10pt, using the
-  //      row's own 20pt plus — when the next row's cell is empty — that
-  //      row's 20pt too (box = 40pt);
-  //   3. else the font shrinks (never below 4pt) until it fits.
-  // Lines are stacked with NO gap (line step = font size). Courier is
-  // monospaced: every character is exactly 0.6 x font size wide.
-  static List<pw.Widget> _fitTopText(
-    String text,
-    double x,
-    double y,
-    double width,
-    double boxHeight, {
-    double maxFont = _fixedFontSize,
-    double minFont = 4.0,
-  }) {
-    final t = text.trim();
-    if (t.isEmpty) return const [];
-    const charW = 0.6;
-    final words = t.split(RegExp(r'\s+'));
-    final longestWord =
-        words.fold<int>(0, (m, w) => w.length > m ? w.length : m);
-
-    List<String> lines = [t];
-    double fs = minFont;
-    for (double f = maxFont; f >= minFont - 0.001; f -= 0.25) {
-      if (t.length * charW * f <= width + 0.001 && f <= boxHeight) {
-        lines = [t];
-        fs = f;
-        break;
-      }
-      if (words.length > 1 &&
-          words.length * f <= boxHeight + 0.001 &&
-          longestWord * charW * f <= width + 0.001) {
-        lines = words;
-        fs = f;
-        break;
-      }
-    }
-
-    return [
-      for (int i = 0; i < lines.length; i++)
-        _overlayTextBox(lines[i], x, y + i * fs, fs,
-            width: width,
-            bold: true,
-            maxLines: 1,
-            textAlign: pw.TextAlign.center),
-    ];
-  }
-
-  // ── Multi-line, word-wrapped text overlay for narrow table columns (e.g.
-  //    From/To/Train-Mode) so long values wrap DOWN within the column
-  //    instead of running past its right edge into the next column. Wraps
-  //    on whole words where possible; a single word longer than one line
-  //    is hard-broken so it still never overflows the column width. Text
-  //    beyond `maxLines` is clipped (never overflows the row height). ──────
-  static pw.Widget _overlayMultilineText(
-    String text,
-    double x,
-    double y,
-    double fontSize, {
-    required double width,
-    required int maxLines,
-    bool bold = false,
-    pw.TextAlign textAlign = pw.TextAlign.left,
-  }) {
-    return pw.Positioned(
-      left: x,
-      top: y,
-      child: pw.SizedBox(
-        width: width,
-        child: pw.Text(
-          text,
-          textAlign: textAlign,
-          maxLines: maxLines,
-          overflow: pw.TextOverflow.clip,
-          style: pw.TextStyle(
-            font: bold ? pw.Font.courierBold() : pw.Font.courier(),
-            fontSize: fontSize,
-          ),
         ),
       ),
     );
