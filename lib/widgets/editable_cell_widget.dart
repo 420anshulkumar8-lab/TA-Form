@@ -15,39 +15,6 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../models/trip_model.dart';
 
-/// Keeps the Vehicle "Other" text within [maxWords] words of at most
-/// [maxWordLength] characters each. When the user tries to exceed either
-/// limit the edit is rejected and [onViolation] is called with a
-/// professional English warning (so the dialog can show it on screen).
-class _WordLimitInputFormatter extends TextInputFormatter {
-  final int maxWords;
-  final int maxWordLength;
-  final ValueChanged<String> onViolation;
-
-  const _WordLimitInputFormatter({
-    required this.maxWords,
-    required this.maxWordLength,
-    required this.onViolation,
-  });
-
-  @override
-  TextEditingValue formatEditUpdate(
-      TextEditingValue oldValue, TextEditingValue newValue) {
-    final trimmed = newValue.text.trim();
-    final words = trimmed.isEmpty ? <String>[] : trimmed.split(RegExp(r'\s+'));
-    if (words.length > maxWords) {
-      onViolation('Maximum $maxWords words are allowed.');
-      return oldValue;
-    }
-    if (words.any((w) => w.length > maxWordLength)) {
-      onViolation('Each word may contain at most $maxWordLength characters.');
-      return oldValue;
-    }
-    onViolation('');
-    return newValue;
-  }
-}
-
 /// Dashed border painter for "suggested, not yet confirmed" cells.
 class _DashedBorderPainter extends CustomPainter {
   final Color color;
@@ -585,50 +552,26 @@ class EditableVehicleCell extends StatelessWidget {
           text: vehicleType == VehicleEntryType.other ? value : '');
       final result = await showDialog<String>(
         context: context,
-        builder: (ctx) {
-          String warning = '';
-          return StatefulBuilder(
-            builder: (ctx, setDialogState) {
-              return AlertDialog(
-                title: const Text('Mode (e.g. By Road, By Taxi)'),
-                content: TextField(
-                  controller: ctrl,
-                  autofocus: true,
-                  textCapitalization: TextCapitalization.words,
-                  decoration: InputDecoration(
-                    border: const OutlineInputBorder(),
-                    helperText: 'Up to 3 words, 5 characters each',
-                    errorText: warning.isEmpty ? null : warning,
-                  ),
-                  inputFormatters: [
-                    _WordLimitInputFormatter(
-                      maxWords: 3,
-                      maxWordLength: 5,
-                      onViolation: (msg) {
-                        if (msg == warning) return;
-                        // Defer: formatters run mid-edit, so rebuild after.
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (ctx.mounted) {
-                            setDialogState(() => warning = msg);
-                          }
-                        });
-                      },
-                    ),
-                  ],
-                ),
-                actions: [
-                  TextButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: const Text('Cancel')),
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(ctx, ctrl.text),
-                    child: const Text('OK'),
-                  ),
-                ],
-              );
-            },
-          );
-        },
+        builder: (ctx) => AlertDialog(
+          title: const Text('Mode (e.g. By Road, By Taxi)'),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
       );
       if (result != null && result.trim().isNotEmpty) {
         onChanged(result.trim(), VehicleEntryType.other);
@@ -650,7 +593,6 @@ class EditableVehicleCell extends StatelessWidget {
           content: TextField(
             controller: ctrl,
             autofocus: true,
-            maxLength: 30,
             textCapitalization: TextCapitalization.words,
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
