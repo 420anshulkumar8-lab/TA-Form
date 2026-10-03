@@ -119,7 +119,7 @@ class FormLayout {
   static const double amountPaiseX = 508; // 9b. पैसे/Paise
 
   // Table body Y-bounds on page 1
-  static const double firstRowY = 239.3; // top of first data row (was 234.3, +5)
+  static const double firstRowY = 241.3; // top of first data row (was 239.3, +2)
   static const double tableBottomY1 = 705.0; // table's bottom border
 
   // ════════════════════════════════════════════════════════════════════════
@@ -128,29 +128,45 @@ class FormLayout {
   // Page 2's scan is shifted LEFT vs page 1: every table X below (date …
   // paise, plus the Purpose/Amount brackets) is printed at (page-1 X − this).
   static const double page2XShift = 20.3;
+  // Time columns (Time left + Time arrived), BOTH pages: width +1 pt each.
+  static const double timeWidthExtra = 1.0;
   // Page 1 only: nudge From / To columns RIGHT (pt). Widths unchanged.
   static const double page1FromShift = 1.0;
   static const double page1ToShift = 1.0;
-  // Page 1 only: nudge the Purpose bracket (right after Day/Night) RIGHT (pt).
-  static const double page1PurposeBracketShift = 1.0;
+  // Page 1 only: Purpose bracket (after Day/Night) RIGHT. 388 + 1.4 - 0.8 = 388.6
+  static const double page1PurposeBracketShift = 1.4;
   // Extra LEFT shift on page 2 only, on top of page2XShift (pt):
-  static const double page2FromShift = 1.0;
-  static const double page2ToShift = 2.0;
-  static const double page2KmShift = 3.0;
-  static const double page2DayNightShift = 3.0;
-  static const double page2PurposeShift = 3.0; // text + its bracket
-  static const double page2AmountShift = 3.0; // Rs + Paise + its bracket
-  // Extra LEFT shift for BOTH brackets (Purpose + Amount) on page 2 only,
-  // on top of their column shifts above:
-  static const double page2BracketShift = 3.0;
-  static const double firstRowY2 = 76.7; // top of first data row
+  static const double page2OtherNudge = 0.5; // RIGHT: Date, Vehicle, Times, Km, Amount text
+  static const double page2FromShift = 0.5; // (was 1.0, +0.5 right)
+  static const double page2ToShift = 1.7; // (was 2.0, +0.3 right)
+  static const double page2KmShift = 3.0; // (+ page2OtherNudge)
+  static const double page2DayNightShift = 2.5; // (was 3.0, +0.5 right)
+  static const double page2PurposeShift = 2.6; // Purpose TEXT only (was 3.0, +0.4 right)
+  static const double page2AmountShift = 3.0; // Rs + Paise text (+ page2OtherNudge)
+  // Brackets: LEFT shift from (page-1 X − page2XShift), independent of text.
+  static const double page2PurposeBracketShift = 6.0; // total 26.3 left
+  static const double page2AmountBracketShift = 4.0; // total 24.3 left (was 6.0, +2 right)
+  // ════════════════════════════════════════════════════════════════════════
+  // GRAND TOTAL — ALWAYS printed on PAGE 2 at these fixed absolute
+  // coordinates (11pt, bold, center). Page-2 column shifts do NOT apply.
+  // ════════════════════════════════════════════════════════════════════════
+  static const String grandTotalLabel = 'Grand Total';
+  static const double grandTotalFontSize = 11.0;
+  static const double grandTotalY = 358.0;
+  static const double grandTotalLabelX = 367.0;
+  static const double grandTotalLabelWidth = 81.0;
+  static const double grandTotalRsX = 449.5;
+  static const double grandTotalRsWidth = 35.0;
+  static const double grandTotalPaiseX = 488.0;
+  static const double grandTotalPaiseWidth = 20.0;
+  static const double firstRowY2 = 78.7; // top of first data row (was 76.7, +2)
   static const double tableBottomY2 = 372.0; // table's bottom border
 
   // "मैं प्रमाणित करता हूँ कि श्री ____ बिल में दिये गये समय के लिए..."
-  static const double certNameX = 116.0;
-  static const double certNameY = 523.0;
-  static const double certNameWidth = 160;
-  static const String certNameAlign = 'left';
+  static const double certNameX = 142.0;
+  static const double certNameY = 565.0;
+  static const double certNameWidth = 165;
+  static const String certNameAlign = 'center';
 
   // ════════════════════════════════════════════════════════════════════════
   // Row sizing — one rowHeight/fontSize pair is chosen for the WHOLE table
@@ -203,11 +219,19 @@ class FormLayout {
   // physical form.
   // ════════════════════════════════════════════════════════════════════════
   static const double contingentGapAfterTa = 18.0; // space below TA grand total
-  static const double contingentDateX = 38.0;
-  static const double contingentFromX = 130.0;
-  static const double contingentToX = 220.0;
-  static const double contingentKmX = 320.0;
-  static const double contingentAmountX = 400.0;
+  // Date / Km / Purpose / Amount use the TA table's own X + widths (and the
+  // same page-2 shifts). Only From / To are contingent-specific: wide, with
+  // a small gap between them (page-1 X, shifted like TA From / To on p.2):
+  //   Date ends 90 → From starts 93 | From 93..202 | gap 4 | To 206..315 |
+  //   Km starts 318.
+  static const double contingentFromX = 93.0;
+  static const double contingentFromWidth = 109.0;
+  static const double contingentToX = 206.0;
+  static const double contingentToWidth = 109.0;
+  // "Contingent Bill:" line + column-label line.
+  static const double contingentHeaderFontSize = 10.0; // bold
+  static const double contingentHeaderRowHeight = 20.0; // line → next line
+  static const double contingentHeaderBlockHeight = 40.0; // both lines
 
   // Bottom limits for the Contingent block, mirroring the TA table bounds —
   // used to decide whether the Contingent rows still fit on the same page
