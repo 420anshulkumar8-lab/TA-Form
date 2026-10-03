@@ -131,17 +131,19 @@ class _PlacedLeg {
 /// Per-column X shift (pt) applied on top of the page-1 X positions.
 /// Page 1 uses none; page 2 uses [FormLayout] page-2 values.
 class _XShift {
-  final double base, from, to, km, dayNight, purpose, amount, bracket, purposeBracket;
+  final double base, other, from, to, km, dayNight, purpose, amount;
+  final double purposeBracket, amountBracket;
   const _XShift({
     this.base = 0,
+    this.other = 0,
     this.from = 0,
     this.to = 0,
     this.km = 0,
     this.dayNight = 0,
     this.purpose = 0,
     this.amount = 0,
-    this.bracket = 0,
     this.purposeBracket = 0,
+    this.amountBracket = 0,
   });
   static const none = _XShift();
   static const page1 = _XShift(
@@ -151,13 +153,15 @@ class _XShift {
   );
   static const page2 = _XShift(
     base: -FormLayout.page2XShift,
+    other: FormLayout.page2OtherNudge,
     from: -FormLayout.page2FromShift,
     to: -FormLayout.page2ToShift,
     km: -FormLayout.page2KmShift,
     dayNight: -FormLayout.page2DayNightShift,
     purpose: -FormLayout.page2PurposeShift,
     amount: -FormLayout.page2AmountShift,
-    bracket: -FormLayout.page2BracketShift,
+    purposeBracket: -FormLayout.page2PurposeBracketShift,
+    amountBracket: -FormLayout.page2AmountBracketShift,
   );
 }
 
@@ -202,6 +206,13 @@ class PdfService {
     final page1Blocks = pages[0];
     final page2Blocks = pages[1];
     final taEndsOnPage2 = page2Blocks.isNotEmpty;
+    // Grand Total is printed at FIXED coordinates on page 2 (always).
+    final hasGrandTotal = taData != null && flatLegs.isNotEmpty;
+    final double grandTotalAmount = taData == null
+        ? 0
+        : (taData.grandTotal > 0
+            ? taData.grandTotal
+            : taData.dateAmounts.values.fold(0.0, (a, b) => a + b));
 
     // ── Where does the TA table (incl. Grand Total) end? Used as the start
     //    Y for the Contingent block on that same page. ──────────────────────
@@ -217,28 +228,35 @@ class PdfService {
         4;
 
     // ── Contingent sizing ──────────────────────────────────────────────────
-    // TEST MODE: same 7-block calibration as the TA table. Total height =
-    // the header line (Block 1's height) + each entry's own block height.
-    final contingentEntries = contingentData?.entries ?? <ContingentEntry>[];
-    const contingentRowHeight = 24.0; // fallback value passed into helper signatures
-    const contingentFontSize = 10.0; // fallback value passed into helper signatures
-    double contingentTotalHeight = _testRowHeightForRow(0); // header line
-    for (int k = 0; k < contingentEntries.length; k++) {
-      contingentTotalHeight += _testRowHeightForRow(k);
-    }
+    // Whole Contingent block goes under the TA table on the page where the
+    // TA ends if it fits there; otherwise it starts at the top of page 2.
     final contingentStartY = taEndY + FormLayout.contingentGapAfterTa;
     final contingentBottomLimit = taEndsOnPage2
         ? FormLayout.contingentBottomY2
         : FormLayout.contingentBottomY1;
-    final contingentFitsAfterTa = !taEndsOnPage2 &&
-        (contingentStartY + contingentTotalHeight + 20) <= contingentBottomLimit;
-    final contingentOnPage1 = !taEndsOnPage2 && contingentFitsAfterTa;
-    final contingentOnPage2WithTa = taEndsOnPage2;
-    final contingentStartYFinal = contingentOnPage1
-        ? contingentStartY
-        : (contingentOnPage2WithTa
-            ? contingentStartY
-            : FormLayout.firstRowY2);
+    List<_PlacedBlock> contingentBlocks = const <_PlacedBlock>[];
+    bool contingentOnPage1 = false;
+    double contingentStartYFinal = contingentStartY;
+    if (contingentData != null) {
+      // Try right under the TA table first.
+      var blocks = _contingentBlocks(contingentData,
+          contingentStartY + FormLayout.contingentHeaderBlockHeight);
+      if (blocks.isNotEmpty) {
+        final fits = !taEndsOnPage2 &&
+            (blocks.last.top + blocks.last.block.endHeight) <=
+                contingentBottomLimit;
+        if (fits) {
+          contingentOnPage1 = true;
+        } else if (!taEndsOnPage2) {
+          // No room on page 1 → whole Contingent starts at the top of page 2.
+          contingentStartYFinal = FormLayout.firstRowY2;
+          blocks = _contingentBlocks(contingentData,
+              contingentStartYFinal + FormLayout.contingentHeaderBlockHeight);
+        }
+      }
+      contingentBlocks = blocks;
+    }
+    final hasContingentRows = contingentBlocks.isNotEmpty;
 
     // ── PAGE 1 — front of GA-31 ──────────────────────────────────────────────
     pdf.addPage(
@@ -258,9 +276,9 @@ class PdfService {
             ..._legRows(page1Blocks, sh: _XShift.page1),
             ..._purposeOverlay(page1Blocks),
             ..._amountOverlay(page1Blocks),
-            if (contingentOnPage1 && contingentData != null)
-              ..._contingentOverlay(contingentData, contingentStartYFinal,
-                  contingentRowHeight, contingentFontSize),
+            if (hasContingentRows && contingentOnPage1)
+              ..._contingentOverlay(
+                  contingentBlocks, contingentStartYFinal, _XShift.page1),
           ],
         ),
       ),
@@ -283,9 +301,10 @@ class PdfService {
             ..._legRows(page2Blocks, sh: _XShift.page2),
             ..._purposeOverlay(page2Blocks, sh: _XShift.page2),
             ..._amountOverlay(page2Blocks, sh: _XShift.page2),
-            if (!contingentOnPage1 && contingentData != null)
-              ..._contingentOverlay(contingentData, contingentStartYFinal,
-                  contingentRowHeight, contingentFontSize),
+            if (hasGrandTotal) ..._grandTotalOverlay(grandTotalAmount),
+            if (hasContingentRows && !contingentOnPage1)
+              ..._contingentOverlay(
+                  contingentBlocks, contingentStartYFinal, _XShift.page2),
             // "मैं प्रमाणित करता हूँ कि श्री ____" — officer's name
             _overlayTextBox(
               profile.name,
@@ -591,8 +610,28 @@ class PdfService {
 
   /// Sizes one leg: how many lines each wrapping column needs; the tallest
   /// column decides the row.
-  static _LegBox _boxForLeg(_FlatLeg flat) {
+  static _LegBox _boxForLeg(_FlatLeg flat, {bool contingent = false}) {
     final leg = flat.leg;
+    if (contingent) {
+      // Contingent row: no Vehicle / times / Day-Night. From & To use the
+      // wide contingent columns; wrap logic is the same as the TA table.
+      final from = _wrapText(leg.fromLocation,
+          _maxCharsFor(FormLayout.contingentFromWidth, _fontSize),
+          breakLongWords: false);
+      final to = _wrapText(leg.toLocation,
+          _maxCharsFor(FormLayout.contingentToWidth, _fontSize),
+          breakLongWords: false);
+      final lines = from.length > to.length ? from.length : to.length;
+      return _LegBox(
+        flat: flat,
+        vehicleLines: const <String>[''],
+        fromLines: from,
+        toLines: to,
+        lines: lines,
+        height: _heightForLines(lines, _fontSize, _linePitch),
+        advance: _advanceFor(lines),
+      );
+    }
     if (leg.vehicleEntryType == VehicleEntryType.halt) {
       // Halt text may be any length: wrap it; each line gets its own
       // "line — text — line" (lines are kept in vehicleLines).
@@ -634,8 +673,10 @@ class PdfService {
   }
 
   /// Builds the block for one trip (or one page-chunk of a trip).
-  static _TripBlock _buildBlock(List<_FlatLeg> flats) {
-    final legs = flats.map(_boxForLeg).toList();
+  static _TripBlock _buildBlock(List<_FlatLeg> flats,
+      {bool contingent = false}) {
+    final legs =
+        flats.map((f) => _boxForLeg(f, contingent: contingent)).toList();
 
     // Rows simply flow downward, each one under the previous.
     final offsets = <double>[];
@@ -761,7 +802,8 @@ class PdfService {
   // ── Leg rows (everything except Purpose and Amount) ──────────────────────
   static List<pw.Widget> _legRows(List<_PlacedBlock> blocks,
       {_XShift sh = _XShift.none}) {
-    final dx = sh.base;
+    final dx = sh.base; // From / To / Day-Night (own nudges)
+    final dxo = sh.base + sh.other; // Date, Vehicle, Times, Km, Halt
     final widgets = <pw.Widget>[];
 
     for (final pb in blocks) {
@@ -774,7 +816,7 @@ class PdfService {
           // ── Halt row: Date normal; "Halt at X" centered across the merged
           // columns with a solid line on either side (line — text — line).
           // Long text wraps; every wrapped line gets its own side lines.
-          widgets.add(_overlayTextBox(leg.date, FormLayout.dateX + dx, y, _fontSize,
+          widgets.add(_overlayTextBox(leg.date, FormLayout.dateX + dxo, y, _fontSize,
               width: FormLayout.vehicleX - FormLayout.dateX - 2,
               bold: true,
               textAlign: pw.TextAlign.center));
@@ -807,18 +849,18 @@ class PdfService {
                 .toDouble();
 
             widgets.add(pw.Positioned(
-              left: FormLayout.vehicleX + dx,
+              left: FormLayout.vehicleX + dxo,
               top: lineY,
               child: solidLine(sideWidth),
             ));
             widgets.add(pw.Positioned(
-              left: FormLayout.vehicleX + dx + sideWidth + textWidth + (gap * 2),
+              left: FormLayout.vehicleX + dxo + sideWidth + textWidth + (gap * 2),
               top: lineY,
               child: solidLine(sideWidth),
             ));
             widgets.add(_overlayTextBox(
               haltLine,
-              FormLayout.vehicleX + dx,
+              FormLayout.vehicleX + dxo,
               lineTop,
               _fontSize,
               width: totalWidth,
@@ -830,24 +872,24 @@ class PdfService {
           // ── Normal journey row. Single-line fields sit on the leg's first
           // line (y). Vehicle / From / To also start at y and continue
           // downward, lines packed tightly.
-          widgets.add(_overlayTextBox(leg.date, FormLayout.dateX + dx, y, _fontSize,
+          widgets.add(_overlayTextBox(leg.date, FormLayout.dateX + dxo, y, _fontSize,
               width: FormLayout.vehicleX - FormLayout.dateX - 2,
               bold: true,
               textAlign: pw.TextAlign.center));
           widgets.addAll(_stackedLines(
             box.vehicleLines,
-            x: FormLayout.vehicleX + dx,
+            x: FormLayout.vehicleX + dxo,
             top: y,
             width: FormLayout.departureX - FormLayout.vehicleX - 2,
           ));
           widgets.add(_overlayTextBox(
-              leg.departureTime, FormLayout.departureX + dx, y, _fontSize,
-              width: FormLayout.arrivalX - FormLayout.departureX - 2,
+              leg.departureTime, FormLayout.departureX + dxo, y, _fontSize,
+              width: FormLayout.arrivalX - FormLayout.departureX - 2 + FormLayout.timeWidthExtra,
               bold: true,
               textAlign: pw.TextAlign.center));
           widgets.add(_overlayTextBox(
-              leg.arrivalTime, FormLayout.arrivalX + dx, y, _fontSize,
-              width: FormLayout.fromX - FormLayout.arrivalX - 2,
+              leg.arrivalTime, FormLayout.arrivalX + dxo, y, _fontSize,
+              width: FormLayout.fromX - FormLayout.arrivalX - 2 + FormLayout.timeWidthExtra,
               bold: true,
               textAlign: pw.TextAlign.center));
           widgets.addAll(_stackedLines(
@@ -864,7 +906,7 @@ class PdfService {
           ));
           widgets.add(_overlayTextBox(
               leg.distanceKm == 0 ? '' : leg.distanceKm.toStringAsFixed(0),
-              FormLayout.kmX + dx + sh.km,
+              FormLayout.kmX + dxo + sh.km,
               y,
               _fontSize,
               width: FormLayout.dayNightX - FormLayout.kmX - 2,
@@ -887,7 +929,8 @@ class PdfService {
   //    such row and the bottom of the last, with a bracket if 2+ rows. ─────
   static List<pw.Widget> _amountOverlay(List<_PlacedBlock> blocks,
       {_XShift sh = _XShift.none}) {
-    final dx = sh.base + sh.amount;
+    final dx = sh.base + sh.amount + sh.other; // text
+    final dxb = sh.base + sh.amountBracket; // bracket
     final widgets = <pw.Widget>[];
 
     final placed = <_PlacedLeg>[];
@@ -919,7 +962,7 @@ class PdfService {
           widgets.add(_drawnBracket(
             // Just RIGHT of the printed line (Amount side): ticks point left,
             // so the vertical line sits one tick-length further right.
-            spineX: _amountLineX + dx + sh.bracket + _bracketLineGap + _bracketTick,
+            spineX: _amountLineX + dxb + _bracketLineGap + _bracketTick,
             top: top,
             height: bottom - top,
           ));
@@ -939,12 +982,49 @@ class PdfService {
     return widgets;
   }
 
+  // ── Grand Total — ALWAYS on page 2, fixed absolute coordinates (no page
+  //    shifts / row flow applied). ──────────────────────────────────────────
+  static List<pw.Widget> _grandTotalOverlay(double total) {
+    final amt = _splitAmount(total);
+    const fs = FormLayout.grandTotalFontSize;
+    return [
+      _overlayTextBox(
+        FormLayout.grandTotalLabel,
+        FormLayout.grandTotalLabelX,
+        FormLayout.grandTotalY,
+        fs,
+        width: FormLayout.grandTotalLabelWidth,
+        bold: true,
+        textAlign: pw.TextAlign.center,
+      ),
+      _overlayTextBox(
+        amt.rupees,
+        FormLayout.grandTotalRsX,
+        FormLayout.grandTotalY,
+        fs,
+        width: FormLayout.grandTotalRsWidth,
+        bold: true,
+        textAlign: pw.TextAlign.center,
+      ),
+      _overlayTextBox(
+        amt.paise,
+        FormLayout.grandTotalPaiseX,
+        FormLayout.grandTotalY,
+        fs,
+        width: FormLayout.grandTotalPaiseWidth,
+        bold: true,
+        textAlign: pw.TextAlign.center,
+      ),
+    ];
+  }
+
   // ── Purpose column — one merged entry per trip; top-aligned when taller than
   //    the trip's rows, otherwise centered against them. Bracket when the trip
   //    has 2+ legs. ────────────────────────────────────────────────────────
   static List<pw.Widget> _purposeOverlay(List<_PlacedBlock> blocks,
       {_XShift sh = _XShift.none}) {
-    final dx = sh.base + sh.purpose;
+    final dx = sh.base + sh.purpose; // text
+    final dxb = sh.base + sh.purposeBracket; // bracket
     final widgets = <pw.Widget>[];
 
     for (final pb in blocks) {
@@ -954,7 +1034,7 @@ class PdfService {
       if (b.legs.length > 1) {
         widgets.add(_drawnBracket(
           // Just LEFT of the printed line (Day/Night side).
-          spineX: _purposeLineX + dx + sh.bracket + sh.purposeBracket - _bracketLineGap,
+          spineX: _purposeLineX + dxb - _bracketLineGap,
           top: pb.top,
           height: b.mergedHeight,
         ));
@@ -999,78 +1079,192 @@ class PdfService {
     );
   }
 
-  // ── Contingent bill rows — printed directly under the TA table on the
-  //    same scanned page (no separate blank page). Row height/font size
-  //    compact automatically as entry count grows. ──────────────────────────
-  // TEST MODE: Contingent entries use the SAME 7-block calibration pattern
-  // as the TA table (_testFontSizeForRow / _testRowHeightForRow), with its
-  // own independent row counter starting at 0 for the first Contingent
-  // entry (i.e. it does NOT continue the TA table's row numbering).
-  static List<pw.Widget> _contingentOverlay(
-    ContingentFormData contingentData,
-    double startY,
-    double rowHeight,
-    double fontSize,
-  ) {
-    final widgets = <pw.Widget>[];
-    double y = startY;
+  // ── Contingent bill ────────────────────────────────────────────────────────
+  // Same layout engine as the TA table:
+  //   • Date / Km / Purpose / Amount use the TA column X + widths, and the
+  //     same page-1 / page-2 shifts ([_XShift]).
+  //   • From / To are wider (contingent* constants in FormLayout), bold 10pt,
+  //     centered, same wrap logic as TA.
+  //   • "Contingent N" = one block: rows flow downward, ONE merged Purpose
+  //     (same centering / bracket logic as TA). Each row has its OWN amount,
+  //     printed in front of that row (no date merging, no amount bracket).
+  //   • No "Total" line — the Grand Total is printed separately on page 2.
 
-    // Header line: fixed 10pt, bold.
-    widgets.add(_overlayText(
-      'Contingent Bill',
-      FormLayout.contingentDateX,
-      y,
-      10.0,
-      bold: true,
-    ));
-    y += _testRowHeightForRow(0);
+  /// True if a contingent group has anything worth printing.
+  static bool _contingentGroupHasData(ContingentGroup g) =>
+      g.purpose.trim().isNotEmpty ||
+      g.rows.any((r) =>
+          r.date.isNotEmpty ||
+          r.fromLocation.isNotEmpty ||
+          r.toLocation.isNotEmpty ||
+          r.distanceKm != 0 ||
+          r.amount != 0);
 
-    for (int rowIndex = 0; rowIndex < contingentData.entries.length; rowIndex++) {
-      final entry = contingentData.entries[rowIndex];
-      final rowFontSize = _testFontSizeForRow(rowIndex);
-      final thisRowHeight = _testRowHeightForRow(rowIndex);
-
-      widgets.add(_overlayTextBox(
-          entry.date, FormLayout.contingentDateX, y, rowFontSize,
-          width: FormLayout.contingentFromX - FormLayout.contingentDateX - 2,
-          bold: true,
-          textAlign: pw.TextAlign.center));
-      widgets.add(_overlayTextBox(
-          entry.fromLocation, FormLayout.contingentFromX, y, rowFontSize,
-          width: FormLayout.contingentToX - FormLayout.contingentFromX - 2,
-          bold: true,
-          textAlign: pw.TextAlign.center));
-      widgets.add(_overlayTextBox(
-          entry.toLocation, FormLayout.contingentToX, y, rowFontSize,
-          width: FormLayout.contingentKmX - FormLayout.contingentToX - 2,
-          bold: true,
-          textAlign: pw.TextAlign.center));
-      widgets.add(_overlayTextBox(
-          entry.distanceKm == 0 ? '' : entry.distanceKm.toStringAsFixed(0),
-          FormLayout.contingentKmX, y, rowFontSize,
-          width: FormLayout.contingentAmountX - FormLayout.contingentKmX - 2,
-          bold: true,
-          textAlign: pw.TextAlign.center));
-      widgets.add(_overlayTextBox('Rs. ${entry.amount.toStringAsFixed(0)}',
-          FormLayout.contingentAmountX, y, rowFontSize,
-          width: 80,
-          bold: true,
-          textAlign: pw.TextAlign.center));
-      y += thisRowHeight;
+  /// Sizes every contingent group into a block and places them top→bottom
+  /// starting at [firstBlockTop]. Returns the placed blocks.
+  static List<_PlacedBlock> _contingentBlocks(
+      ContingentFormData data, double firstBlockTop) {
+    final placed = <_PlacedBlock>[];
+    double top = firstBlockTop;
+    int gi = 0;
+    for (final g in data.groups) {
+      if (!_contingentGroupHasData(g)) continue;
+      final flats = <_FlatLeg>[];
+      for (int r = 0; r < g.rows.length; r++) {
+        final row = g.rows[r];
+        flats.add(_FlatLeg(
+          leg: TripRow(
+            date: row.date,
+            fromLocation: row.fromLocation,
+            toLocation: row.toLocation,
+            distanceKm: row.distanceKm,
+          ),
+          tripIndex: gi,
+          purpose: g.purpose,
+          isFirstOfTrip: r == 0,
+          isLastOfTrip: r == g.rows.length - 1,
+          amount: row.amount,
+        ));
+      }
+      gi++;
+      if (flats.isEmpty) continue;
+      final block = _buildBlock(flats, contingent: true);
+      placed.add(_PlacedBlock(block, top));
+      top += block.height;
     }
+    return placed;
+  }
 
-    final lastFontSize = contingentData.entries.isEmpty
-        ? _testFontSizeForRow(0)
-        : _testFontSizeForRow(contingentData.entries.length - 1);
-    widgets.add(_overlayText(
-      'Total: Rs. ${contingentData.totalAmount.toStringAsFixed(0)}',
-      FormLayout.contingentAmountX,
-      y + 2,
-      lastFontSize,
-      bold: true,
-    ));
+  /// Bold, underlined word. Underline is a real vector line under the text.
+  static List<pw.Widget> _underlinedWord(String text, double x, double y) {
+    final w = text.length * FormLayout.contingentHeaderFontSize * _charWidthFactor;
+    return [
+      _overlayText(text, x, y, FormLayout.contingentHeaderFontSize, bold: true),
+      pw.Positioned(
+        left: x,
+        top: y + FormLayout.contingentHeaderFontSize * 1.05,
+        child: pw.CustomPaint(
+          size: PdfPoint(w, 1),
+          painter: (canvas, size) {
+            canvas
+              ..setStrokeColor(PdfColors.black)
+              ..setLineWidth(0.8)
+              ..moveTo(0, 0)
+              ..lineTo(size.x, 0)
+              ..strokePath();
+          },
+        ),
+      ),
+    ];
+  }
 
+  /// "Contingent Bill:" header (underlined) + the column-label line.
+  static List<pw.Widget> _contingentHeader(double startY, _XShift sh) {
+    final widgets = <pw.Widget>[];
+    final dx = sh.base; // From / To (own nudges)
+    final dxo = sh.base + sh.other; // Date, Km
+    const fs = FormLayout.contingentHeaderFontSize;
+
+    // Line 1: "Contingent" in the Date column, "Bill:" in the Train column.
+    widgets.addAll(_underlinedWord('Contingent', FormLayout.dateX + dxo, startY));
+    widgets.addAll(_underlinedWord('Bill:', FormLayout.vehicleX + dxo, startY));
+
+    // Line 2: column labels, each centered in its own column.
+    final y = startY + FormLayout.contingentHeaderRowHeight;
+    pw.Widget label(String t, double x, double w) => _overlayTextBox(t, x, y, fs,
+        width: w, bold: true, textAlign: pw.TextAlign.center);
+    widgets.add(label('Date', FormLayout.dateX + dxo,
+        FormLayout.vehicleX - FormLayout.dateX - 2));
+    widgets.add(label('From', FormLayout.contingentFromX + dx + sh.from,
+        FormLayout.contingentFromWidth));
+    widgets.add(label('To', FormLayout.contingentToX + dx + sh.to,
+        FormLayout.contingentToWidth));
+    widgets.add(label('Km', FormLayout.kmX + dxo + sh.km,
+        FormLayout.dayNightX - FormLayout.kmX - 2));
+    widgets.add(label('Purpose', FormLayout.purposeX + sh.base + sh.purpose,
+        FormLayout.purposeWidth));
+    widgets.add(label(
+        'Amount',
+        FormLayout.amountRsX + sh.base + sh.amount + sh.other + _amountTextShift,
+        FormLayout.amountPaiseX - FormLayout.amountRsX - 2 + 30));
     return widgets;
+  }
+
+  /// Date | From | To | Km for every contingent row.
+  static List<pw.Widget> _contingentLegRows(List<_PlacedBlock> blocks,
+      {_XShift sh = _XShift.none}) {
+    final dx = sh.base;
+    final dxo = sh.base + sh.other;
+    final widgets = <pw.Widget>[];
+    for (final pb in blocks) {
+      for (int i = 0; i < pb.block.legs.length; i++) {
+        final box = pb.block.legs[i];
+        final leg = box.flat.leg;
+        final y = pb.top + pb.block.legOffsets[i];
+        widgets.add(_overlayTextBox(leg.date, FormLayout.dateX + dxo, y, _fontSize,
+            width: FormLayout.vehicleX - FormLayout.dateX - 2,
+            bold: true,
+            textAlign: pw.TextAlign.center));
+        widgets.addAll(_stackedLines(
+          box.fromLines,
+          x: FormLayout.contingentFromX + dx + sh.from,
+          top: y,
+          width: FormLayout.contingentFromWidth,
+        ));
+        widgets.addAll(_stackedLines(
+          box.toLines,
+          x: FormLayout.contingentToX + dx + sh.to,
+          top: y,
+          width: FormLayout.contingentToWidth,
+        ));
+        widgets.add(_overlayTextBox(
+            leg.distanceKm == 0 ? '' : leg.distanceKm.toStringAsFixed(0),
+            FormLayout.kmX + dxo + sh.km,
+            y,
+            _fontSize,
+            width: FormLayout.dayNightX - FormLayout.kmX - 2,
+            bold: true,
+            textAlign: pw.TextAlign.center));
+      }
+    }
+    return widgets;
+  }
+
+  /// One amount per ROW (Rs | Paise), in front of that row. No bracket.
+  static List<pw.Widget> _contingentAmountOverlay(List<_PlacedBlock> blocks,
+      {_XShift sh = _XShift.none}) {
+    final dx = sh.base + sh.amount + sh.other;
+    final widgets = <pw.Widget>[];
+    for (final pb in blocks) {
+      for (int i = 0; i < pb.block.legs.length; i++) {
+        final box = pb.block.legs[i];
+        final flat = box.flat;
+        if (flat.leg.date.isEmpty && flat.amount == 0) continue;
+        final top = pb.top + pb.block.legOffsets[i];
+        final textTop = top + (box.height / 2) - (_fontSize / 2);
+        final amt = _splitAmount(flat.amount);
+        widgets.add(_overlayTextBox(
+            amt.rupees, FormLayout.amountRsX + dx + _amountTextShift, textTop, _fontSize,
+            width: FormLayout.amountPaiseX - FormLayout.amountRsX - 2,
+            bold: true,
+            textAlign: pw.TextAlign.center));
+        widgets.add(_overlayTextBox(
+            amt.paise, FormLayout.amountPaiseX + dx + _amountTextShift, textTop, _fontSize,
+            width: 30, bold: true, textAlign: pw.TextAlign.center));
+      }
+    }
+    return widgets;
+  }
+
+  /// Everything for the Contingent block on one page.
+  static List<pw.Widget> _contingentOverlay(
+      List<_PlacedBlock> blocks, double startY, _XShift sh) {
+    return [
+      ..._contingentHeader(startY, sh),
+      ..._contingentLegRows(blocks, sh: sh),
+      ..._purposeOverlay(blocks, sh: sh),
+      ..._contingentAmountOverlay(blocks, sh: sh),
+    ];
   }
 
   // ── Split a decimal amount into Rupees + Paise strings ────────────────────
