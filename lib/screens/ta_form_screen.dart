@@ -30,7 +30,7 @@ class TaFormScreen extends StatefulWidget {
 class _TaFormScreenState extends State<TaFormScreen> {
   late List<TripGroup> _trips;
   late Map<String, double> _dateAmounts; // date → user-selected amount
-  late List<ContingentEntry> _contingentEntries;
+  late List<ContingentGroup> _contingentGroups;
   bool _showContingent = false;
   bool _isEditing = true;
   bool _isSaving = false;
@@ -71,11 +71,14 @@ class _TaFormScreenState extends State<TaFormScreen> {
     }
 
     if (widget.session.formDataContingent != null) {
-      _contingentEntries =
-          ContingentFormData.fromJson(widget.session.formDataContingent!).entries;
+      _contingentGroups =
+          ContingentFormData.fromJson(widget.session.formDataContingent!).groups;
+      if (_contingentGroups.isEmpty) {
+        _contingentGroups = [ContingentGroup.blank()];
+      }
       _showContingent = true;
     } else {
-      _contingentEntries = [];
+      _contingentGroups = [];
     }
 
     // One-time hint: nudge the (horizontally scrollable) trip table
@@ -126,7 +129,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
 
   double get _grandTaTotal => TaCalculationService.grandTaTotal(_dateAmounts);
   double get _grandContingentTotal =>
-      TaCalculationService.grandContingentTotal(_contingentEntries);
+      TaCalculationService.grandContingentTotal(_contingentGroups);
 
   // ── Trip/leg mutation helpers ─────────────────────────────────────────────
 
@@ -215,34 +218,68 @@ class _TaFormScreenState extends State<TaFormScreen> {
 
   // ── Contingent helpers ────────────────────────────────────────────────────
 
-  void _updateContingent(int i, ContingentEntry Function(ContingentEntry) fn) {
-    setState(() => _contingentEntries[i] = fn(_contingentEntries[i]));
+  void _updateContingentRow(
+      int g, int r, ContingentRow Function(ContingentRow) fn) {
+    setState(() {
+      final group = _contingentGroups[g];
+      final rows = List<ContingentRow>.from(group.rows);
+      rows[r] = fn(rows[r]);
+      _contingentGroups[g] = group.copyWith(rows: rows);
+    });
+    _saveDraft();
+  }
+
+  void _updateContingentPurpose(int g, String purpose) {
+    setState(() =>
+        _contingentGroups[g] = _contingentGroups[g].copyWith(purpose: purpose));
     _saveDraft();
   }
 
   void _addContingentSection() {
     setState(() {
       _showContingent = true;
-      if (_contingentEntries.isEmpty) _contingentEntries = [const ContingentEntry()];
+      if (_contingentGroups.isEmpty) {
+        _contingentGroups = [ContingentGroup.blank()];
+      }
     });
     _saveDraft();
   }
 
-  void _addContingentRow() {
-    setState(() => _contingentEntries.add(const ContingentEntry()));
+  /// "Add Contingent N+1" — a new block with its own merged Purpose.
+  void _addContingentGroup() {
+    setState(() => _contingentGroups.add(ContingentGroup.blank()));
     _saveDraft();
   }
 
-  void _removeContingentRow(int i) {
-    if (_contingentEntries.length <= 1) return;
-    setState(() => _contingentEntries.removeAt(i));
+  void _removeContingentGroup(int g) {
+    if (_contingentGroups.length <= 1) return;
+    setState(() => _contingentGroups.removeAt(g));
+    _saveDraft();
+  }
+
+  void _addContingentRow(int g) {
+    setState(() {
+      final group = _contingentGroups[g];
+      _contingentGroups[g] =
+          group.copyWith(rows: [...group.rows, const ContingentRow()]);
+    });
+    _saveDraft();
+  }
+
+  void _removeContingentRow(int g, int r) {
+    final group = _contingentGroups[g];
+    if (group.rows.length <= 1) return;
+    setState(() {
+      final rows = List<ContingentRow>.from(group.rows)..removeAt(r);
+      _contingentGroups[g] = group.copyWith(rows: rows);
+    });
     _saveDraft();
   }
 
   void _removeContingentSection() {
     setState(() {
       _showContingent = false;
-      _contingentEntries = [];
+      _contingentGroups = [];
     });
     _saveDraft();
   }
@@ -255,7 +292,9 @@ class _TaFormScreenState extends State<TaFormScreen> {
 
   bool get _hasContingentData =>
       _showContingent &&
-      _contingentEntries.any((e) => e.date.isNotEmpty || e.amount > 0);
+      _contingentGroups.any((g) =>
+          g.purpose.isNotEmpty ||
+          g.rows.any((r) => r.date.isNotEmpty || r.amount > 0));
 
   // ── Save / Final ──────────────────────────────────────────────────────────
 
@@ -278,7 +317,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
             employeeId: TaSession.ownerId,
             month: widget.session.month,
             year: widget.session.year,
-            entries: _contingentEntries,
+            groups: _contingentGroups,
             totalAmount: _grandContingentTotal,
             status: 'draft',
           ).toJson()
@@ -338,7 +377,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
             employeeId: TaSession.ownerId,
             month: widget.session.month,
             year: widget.session.year,
-            entries: _contingentEntries,
+            groups: _contingentGroups,
             totalAmount: _grandContingentTotal,
             status: 'submitted',
           ).toJson()
@@ -393,7 +432,7 @@ class _TaFormScreenState extends State<TaFormScreen> {
                 employeeId: TaSession.ownerId,
                 month: widget.session.month,
                 year: widget.session.year,
-                entries: _contingentEntries,
+                groups: _contingentGroups,
                 totalAmount: _grandContingentTotal,
                 status: 'draft',
               ).toJson()
@@ -586,7 +625,23 @@ class _TaFormScreenState extends State<TaFormScreen> {
                             ]),
                           ),
                           const SizedBox(height: 8),
-                          _buildContingentTable(),
+                          for (int g = 0; g < _contingentGroups.length; g++)
+                            _buildContingentBlock(g),
+                          if (_isEditing)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+                              child: OutlinedButton.icon(
+                                onPressed: _addContingentGroup,
+                                icon: const Icon(Icons.add),
+                                label: Text(
+                                    'Add Contingent ${_contingentGroups.length + 1}'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFF546E7A),
+                                  side: const BorderSide(
+                                      color: Color(0xFF546E7A), width: 1.2),
+                                ),
+                              ),
+                            ),
                           const SizedBox(height: 12),
                           Padding(
                             padding: const EdgeInsets.fromLTRB(10, 0, 10, 0),
@@ -1097,37 +1152,150 @@ class _TaFormScreenState extends State<TaFormScreen> {
     );
   }
 
-  // ── CONTINGENT TABLE ──────────────────────────────────────────────────────
+  // ── CONTINGENT BLOCK ──────────────────────────────────────────────────────
+  // "Contingent N": rows (Date | From | To | Km), ONE merged Purpose for the
+  // whole block, and an Amount per row (no date merging).
 
-  Widget _buildContingentTable() {
+  Widget _buildContingentBlock(int g) {
+    final group = _contingentGroups[g];
+    final theme = Theme.of(context);
     const colDate = 110.0;
     const colLoc = 120.0;
     const colKm = 80.0;
+    const colPurpose = 130.0;
     const colAmount = 100.0;
     const colAction = 48.0;
+    const rowH = _rowHeight;
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _tableHeaderRow([
-            _HeaderCell('Date', colDate),
-            _HeaderCell('From', colLoc),
-            _HeaderCell('To', colLoc),
-            _HeaderCell('Km', colKm),
-            _HeaderCell('Amount', colAmount),
-            if (_isEditing) _HeaderCell('', colAction),
-          ]),
-          for (int i = 0; i < _contingentEntries.length; i++)
-            _buildContingentRow(i, colDate, colLoc, colKm, colAmount, colAction),
+          Container(
+            margin: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF546E7A).withOpacity(0.10),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                  color: const Color(0xFF546E7A).withOpacity(0.3), width: 1.2),
+            ),
+            child: Row(children: [
+              const Icon(Icons.receipt_long,
+                  size: 18, color: Color(0xFF546E7A)),
+              const SizedBox(width: 8),
+              Text('Contingent ${g + 1}',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                      color: Color(0xFF546E7A))),
+              const Spacer(),
+              if (_isEditing && _contingentGroups.length > 1)
+                GestureDetector(
+                  onTap: () => _removeContingentGroup(g),
+                  child: const Icon(Icons.cancel, color: Colors.red, size: 20),
+                ),
+            ]),
+          ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _tableHeaderRow([
+                  _HeaderCell('Date', colDate),
+                  _HeaderCell('From', colLoc),
+                  _HeaderCell('To', colLoc),
+                  _HeaderCell('Km', colKm),
+                  _HeaderCell('Purpose', colPurpose),
+                  _HeaderCell('Amount', colAmount),
+                  if (_isEditing) _HeaderCell('', colAction),
+                ]),
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Date | From | To | Km  (one row each)
+                      Column(children: [
+                        for (int r = 0; r < group.rows.length; r++)
+                          SizedBox(
+                            height: rowH,
+                            child: _buildContingentLeftCells(
+                                g, r, group.rows[r], colDate, colLoc, colKm),
+                          ),
+                      ]),
+                      // Purpose — ONE merged box for the whole block.
+                      MergedPurposeCellWidget(
+                        width: colPurpose,
+                        rowHeight: rowH,
+                        legCount: group.rows.length,
+                        purpose: group.purpose,
+                        enabled: _isEditing,
+                        onChanged: (v) => _updateContingentPurpose(g, v),
+                      ),
+                      // Amount (own value per row) + delete-row button.
+                      Column(children: [
+                        for (int r = 0; r < group.rows.length; r++)
+                          SizedBox(
+                            height: rowH,
+                            child: Row(children: [
+                              EditableTextCell(
+                                width: colAmount,
+                                value: group.rows[r].amount == 0
+                                    ? ''
+                                    : group.rows[r].amount.toStringAsFixed(0),
+                                label: 'Amount',
+                                enabled: _isEditing,
+                                keyboardType: TextInputType.number,
+                                hintText: 'Rs.',
+                                maxLength: 6,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  LengthLimitingTextInputFormatter(6),
+                                ],
+                                onChanged: (v) => _updateContingentRow(
+                                    g,
+                                    r,
+                                    (e) => e.copyWith(
+                                        amount: double.tryParse(v) ?? 0)),
+                              ),
+                              if (_isEditing)
+                                SizedBox(
+                                  width: colAction,
+                                  child: Align(
+                                    alignment: Alignment.centerRight,
+                                    child: IconButton(
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      icon: const Icon(Icons.cancel,
+                                          color: Colors.red, size: 20),
+                                      onPressed: group.rows.length > 1
+                                          ? () => _removeContingentRow(g, r)
+                                          : null,
+                                    ),
+                                  ),
+                                ),
+                            ]),
+                          ),
+                      ]),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
           if (_isEditing)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Center(
-                child: IconButton.filled(
-                  icon: const Icon(Icons.add),
-                  onPressed: _addContingentRow,
+              padding: const EdgeInsets.only(left: 22, top: 6),
+              child: TextButton.icon(
+                onPressed: () => _addContingentRow(g),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Add Row'),
+                style: TextButton.styleFrom(
+                  foregroundColor: theme.colorScheme.onSurface.withOpacity(0.7),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
                 ),
               ),
             ),
@@ -1136,96 +1304,52 @@ class _TaFormScreenState extends State<TaFormScreen> {
     );
   }
 
-  Widget _buildContingentRow(
-      int i, double colDate, double colLoc, double colKm,
-      double colAmount, double colAction) {
-    final entry = _contingentEntries[i];
-    final theme = Theme.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-              color: theme.colorScheme.outline.withOpacity(0.2)),
+  Widget _buildContingentLeftCells(int g, int r, ContingentRow row,
+      double colDate, double colLoc, double colKm) {
+    return Row(
+      children: [
+        EditableDateCell(
+            width: colDate,
+            value: row.date,
+            month: _monthNum,
+            year: _yearNum,
+            enabled: _isEditing,
+            onChanged: (v) =>
+                _updateContingentRow(g, r, (e) => e.copyWith(date: v))),
+        EditableTextCell(
+            width: colLoc,
+            value: row.fromLocation,
+            label: 'From',
+            enabled: _isEditing,
+            hintText: 'From',
+            allowDash: true,
+            onChanged: (v) =>
+                _updateContingentRow(g, r, (e) => e.copyWith(fromLocation: v))),
+        EditableTextCell(
+            width: colLoc,
+            value: row.toLocation,
+            label: 'To',
+            enabled: _isEditing,
+            hintText: 'To',
+            allowDash: true,
+            onChanged: (v) =>
+                _updateContingentRow(g, r, (e) => e.copyWith(toLocation: v))),
+        EditableTextCell(
+          width: colKm,
+          value: row.distanceKm == 0 ? '' : row.distanceKm.toStringAsFixed(0),
+          label: 'Kilometre',
+          enabled: _isEditing,
+          keyboardType: TextInputType.number,
+          hintText: 'Km',
+          maxLength: 4,
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(4),
+          ],
+          onChanged: (v) => _updateContingentRow(
+              g, r, (e) => e.copyWith(distanceKm: double.tryParse(v) ?? 0)),
         ),
-      ),
-      child: Row(
-        children: [
-          EditableDateCell(
-              width: colDate,
-              value: entry.date,
-              month: _monthNum,
-              year: _yearNum,
-              enabled: _isEditing,
-              onChanged: (v) => _updateContingent(i, (e) => e.copyWith(date: v))),
-          EditableTextCell(
-              width: colLoc,
-              value: entry.fromLocation,
-              label: 'From',
-              enabled: _isEditing,
-              hintText: 'From',
-              maxLength: 9,
-              allowDash: true,
-              onChanged: (v) =>
-                  _updateContingent(i, (e) => e.copyWith(fromLocation: v))),
-          EditableTextCell(
-              width: colLoc,
-              value: entry.toLocation,
-              label: 'To',
-              enabled: _isEditing,
-              hintText: 'To',
-              maxLength: 8,
-              allowDash: true,
-              onChanged: (v) =>
-                  _updateContingent(i, (e) => e.copyWith(toLocation: v))),
-          EditableTextCell(
-            width: colKm,
-            value: entry.distanceKm == 0
-                ? ''
-                : entry.distanceKm.toStringAsFixed(0),
-            label: 'Kilometre',
-            enabled: _isEditing,
-            keyboardType: TextInputType.number,
-            hintText: 'Km',
-            maxLength: 4,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(4),
-            ],
-            onChanged: (v) => _updateContingent(
-                i, (e) => e.copyWith(distanceKm: double.tryParse(v) ?? 0)),
-          ),
-          EditableTextCell(
-            width: colAmount,
-            value: entry.amount == 0 ? '' : entry.amount.toStringAsFixed(0),
-            label: 'Amount',
-            enabled: _isEditing,
-            keyboardType: TextInputType.number,
-            hintText: 'Rs.',
-            maxLength: 6,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(6),
-            ],
-            onChanged: (v) => _updateContingent(
-                i, (e) => e.copyWith(amount: double.tryParse(v) ?? 0)),
-          ),
-          if (_isEditing)
-            SizedBox(
-              width: colAction,
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: IconButton(
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  icon: const Icon(Icons.cancel, color: Colors.red, size: 20),
-                  onPressed: _contingentEntries.length > 1
-                      ? () => _removeContingentRow(i)
-                      : null,
-                ),
-              ),
-            ),
-        ],
-      ),
+      ],
     );
   }
 
