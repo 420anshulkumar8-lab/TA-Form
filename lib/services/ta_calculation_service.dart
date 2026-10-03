@@ -12,8 +12,8 @@ class TaCalculationService {
   }
 
   /// Grand Contingent total.
-  static double grandContingentTotal(List<ContingentEntry> entries) {
-    return entries.fold(0.0, (sum, e) => sum + e.amount);
+  static double grandContingentTotal(List<ContingentGroup> groups) {
+    return groups.fold(0.0, (sum, g) => sum + g.total);
   }
 
   // ── Auto-suggest helpers ──────────────────────────────────────────────────
